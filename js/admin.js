@@ -1091,7 +1091,7 @@ async saveBanner() {
     } finally {
         Utils.hideLoading();
     }
-}
+},
     
     async deleteBanner(bannerId, type) {
         if (!confirm('Delete this banner?')) return;
