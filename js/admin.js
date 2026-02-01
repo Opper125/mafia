@@ -1048,6 +1048,7 @@ const AdminApp = {
     },
     
     // Save banner - compress more aggressively
+// Save banner - Upload to ImgBB first
 async saveBanner() {
     const type = this.state.currentBannerType;
     const imageInput = document.getElementById('banner-image');
@@ -1068,12 +1069,27 @@ async saveBanner() {
     TelegramApp.hapticFeedback('impact', 'medium');
     
     try {
-        // Compress image more aggressively for JSONBin limits
-        const image = await Utils.compressImage(imageInput.files[0], 800, 0.5);
+        // Upload to ImgBB (free image hosting - no size limit)
+        const formData = new FormData();
+        formData.append('image', imageInput.files[0]);
         
-        console.log('Image size:', Math.round(image.length / 1024), 'KB');
+        const IMGBB_API_KEY = 'd3b0e9fd43ff0eb762987129a2f21e9c';
         
-        const data = { image };
+        const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error?.message || 'Image upload failed');
+        }
+        
+        console.log('✅ Image uploaded to ImgBB:', result.data.url);
+        
+        // Save banner with image URL (not base64)
+        const data = { image: result.data.url };
         if (type === 'type2') {
             data.categoryId = categoryId;
             data.description = description;
@@ -1087,7 +1103,7 @@ async saveBanner() {
         
     } catch (error) {
         console.error('Save banner error:', error);
-        Utils.showToast('Failed to save banner. Try a smaller image.', 'error');
+        Utils.showToast('Failed to save banner: ' + error.message, 'error');
     } finally {
         Utils.hideLoading();
     }
