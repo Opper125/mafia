@@ -1506,31 +1506,51 @@ async saveBanner() {
     },
     
     async saveSettings() {
-        const websiteName = document.getElementById('website-name').value.trim();
-        const logoInput = document.getElementById('website-logo');
+    const websiteName = document.getElementById('website-name').value.trim();
+    const logoInput = document.getElementById('website-logo');
+    
+    Utils.showLoading('Saving...');
+    
+    try {
+        const updates = { ...this.state.settings };
         
-        Utils.showLoading('Saving...');
+        if (websiteName) updates.websiteName = websiteName;
         
-        try {
-            const updates = { ...this.state.settings };
+        // Upload logo to ImgBB if new file selected
+        if (logoInput.files[0]) {
+            console.log('📤 Uploading logo to ImgBB...');
             
-            if (websiteName) updates.websiteName = websiteName;
+            const formData = new FormData();
+            formData.append('image', logoInput.files[0]);
             
-            if (logoInput.files[0]) {
-                updates.websiteLogo = await Utils.compressImage(logoInput.files[0], 200, 0.9);
+            const IMGBB_API_KEY = 'd3b0e9fd43ff0eb762987129a2f21e9c';
+            
+            const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error?.message || 'Logo upload failed');
             }
             
-            await Database.updateSettings(updates);
-            this.state.settings = updates;
-            Utils.showToast('Settings saved!', 'success');
-            
-        } catch (error) {
-            console.error('Save settings error:', error);
-            Utils.showToast('Failed', 'error');
-        } finally {
-            Utils.hideLoading();
+            console.log('✅ Logo uploaded:', result.data.url);
+            updates.websiteLogo = result.data.url;
         }
-    },
+        
+        await Database.updateSettings(updates);
+        this.state.settings = updates;
+        Utils.showToast('Settings saved!', 'success');
+        
+    } catch (error) {
+        console.error('Save settings error:', error);
+        Utils.showToast('Failed: ' + error.message, 'error');
+    } finally {
+        Utils.hideLoading();
+    }
+},
     
     // ========== DATABASE IDS ==========
     renderDatabaseIds() {
