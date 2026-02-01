@@ -1,0 +1,27 @@
+{
+  "name": "game-topup-bot",
+  "version": "1.0.0",
+  "description": "Gaming Top-Up Website with Telegram Bot Integration",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx serve .",
+    "dev": "npx serve . -l 3000"
+  },
+  "keywords": [
+    "telegram",
+    "mini-app",
+    "gaming",
+    "topup",
+    "pubg",
+    "mobile-legends"
+  ],
+  "author": "OPPER101",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "serve": "^14.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
