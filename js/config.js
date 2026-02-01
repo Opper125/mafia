@@ -9,6 +9,9 @@ const CONFIG = {
     // Admin Configuration
     ADMIN_TELEGRAM_ID: '1538232799',
     ADMIN_USERNAME: 'OPPER101',
+
+     // ⚠️ Admin Panel Password - ဒီ Password ကို သင်ကြိုက်တာ ပြောင်းလို့ရပါတယ်
+    ADMIN_PASSWORD: 'admin123456',  // ← ဒီမှာ သင့် Password ထည့်ပါ
     
     // JSONBin.io Configuration
     JSONBIN_API_KEY: '$2a$10$qIofQ05vovEVKj99fILB3OtPttEzZylUmfXXKwdomNVuP/LhlYSBS',
