@@ -837,42 +837,6 @@ const Database = {
     try {
         console.log('💳 Creating topup for:', topupData.telegramId);
         
-        // Compress proof image if too large
-        let proofImage = topupData.proofImage;
-        
-        if (proofImage && proofImage.length > 500000) { // If larger than ~500KB
-            console.log('⚠️ Proof image too large, compressing...');
-            try {
-                const img = new Image();
-                await new Promise((resolve, reject) => {
-                    img.onload = resolve;
-                    img.onerror = reject;
-                    img.src = proofImage;
-                });
-                
-                const canvas = document.createElement('canvas');
-                const maxSize = 800;
-                let { width, height } = img;
-                
-                if (width > height && width > maxSize) {
-                    height = (height * maxSize) / width;
-                    width = maxSize;
-                } else if (height > maxSize) {
-                    width = (width * maxSize) / height;
-                    height = maxSize;
-                }
-                
-                canvas.width = width;
-                canvas.height = height;
-                canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-                proofImage = canvas.toDataURL('image/jpeg', 0.5);
-                console.log('✅ Proof image compressed');
-            } catch (compressError) {
-                console.warn('Could not compress image:', compressError);
-                // Continue with original image
-            }
-        }
-        
         let data;
         try {
             data = await this.read(this.bins.TOPUPS, false);
@@ -888,7 +852,7 @@ const Database = {
             telegramId: String(topupData.telegramId),
             amount: topupData.amount,
             paymentMethod: topupData.paymentMethod,
-            proofImage: proofImage,
+            proofImage: topupData.proofImage,  // Now this is a URL, not base64
             status: 'pending',
             createdAt: new Date().toISOString(),
             processedAt: null,
