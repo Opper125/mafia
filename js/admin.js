@@ -1047,46 +1047,51 @@ const AdminApp = {
         document.getElementById('add-banner-modal').classList.add('hidden');
     },
     
-    async saveBanner() {
-        const type = this.state.currentBannerType;
-        const imageInput = document.getElementById('banner-image');
-        const categoryId = document.getElementById('banner-category')?.value;
-        const description = document.getElementById('banner-text')?.value;
+    // Save banner - compress more aggressively
+async saveBanner() {
+    const type = this.state.currentBannerType;
+    const imageInput = document.getElementById('banner-image');
+    const categoryId = document.getElementById('banner-category')?.value;
+    const description = document.getElementById('banner-text')?.value;
+    
+    if (!imageInput.files[0]) {
+        Utils.showToast('Please upload an image', 'warning');
+        return;
+    }
+    
+    if (type === 'type2' && !categoryId) {
+        Utils.showToast('Please select a category', 'warning');
+        return;
+    }
+    
+    Utils.showLoading('Uploading banner...');
+    TelegramApp.hapticFeedback('impact', 'medium');
+    
+    try {
+        // Compress image more aggressively for JSONBin limits
+        const image = await Utils.compressImage(imageInput.files[0], 800, 0.5);
         
-        if (!imageInput.files[0]) {
-            Utils.showToast('Please upload an image', 'warning');
-            return;
+        console.log('Image size:', Math.round(image.length / 1024), 'KB');
+        
+        const data = { image };
+        if (type === 'type2') {
+            data.categoryId = categoryId;
+            data.description = description;
         }
         
-        if (type === 'type2' && !categoryId) {
-            Utils.showToast('Please select a category', 'warning');
-            return;
-        }
+        await Database.createBanner(data, type);
+        await this.loadAdminData();
+        this.renderBanners();
+        this.closeAddBanner();
+        Utils.showToast('Banner created!', 'success');
         
-        Utils.showLoading('Uploading...');
-        
-        try {
-            const image = await Utils.compressImage(imageInput.files[0], 1920, 0.85);
-            
-            const data = { image };
-            if (type === 'type2') {
-                data.categoryId = categoryId;
-                data.description = description;
-            }
-            
-            await Database.createBanner(data, type);
-            await this.loadAdminData();
-            this.renderBanners();
-            this.closeAddBanner();
-            Utils.showToast('Banner created!', 'success');
-            
-        } catch (error) {
-            console.error('Save banner error:', error);
-            Utils.showToast('Failed to save', 'error');
-        } finally {
-            Utils.hideLoading();
-        }
-    },
+    } catch (error) {
+        console.error('Save banner error:', error);
+        Utils.showToast('Failed to save banner. Try a smaller image.', 'error');
+    } finally {
+        Utils.hideLoading();
+    }
+}
     
     async deleteBanner(bannerId, type) {
         if (!confirm('Delete this banner?')) return;
