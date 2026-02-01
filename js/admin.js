@@ -62,40 +62,55 @@ const AdminApp = {
         document.getElementById('access-denied').classList.add('hidden');
         document.getElementById('admin-dashboard').classList.add('hidden');
         document.getElementById('verification-screen').classList.remove('hidden');
+        
+        // Focus on password input
+        setTimeout(() => {
+            document.getElementById('admin-password').focus();
+        }, 100);
     },
     
-    // Verify admin
+    // Verify admin - ပြင်ဆင်ထားသော Function
     async verifyAdmin() {
         const password = document.getElementById('admin-password').value;
         const errorDiv = document.getElementById('verification-error');
         
+        // Hide previous error
+        errorDiv.classList.add('hidden');
+        
         if (!password) {
             errorDiv.textContent = 'Please enter your password';
             errorDiv.classList.remove('hidden');
+            this.shakeInput();
             return;
         }
         
         Utils.showLoading('Verifying...');
         
         try {
-            // In production, verify against Telegram 2FA
-            // For now, we'll use a simple verification
-            // The password should be stored securely and verified server-side
+            // Simulate small delay for security
+            await new Promise(resolve => setTimeout(resolve, 500));
             
-            // Simulate verification delay
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            // For demo purposes, accept any password
-            // In production, implement proper 2FA verification
-            this.state.isVerified = true;
-            
-            // Load admin data
-            await this.loadAdminData();
-            
-            // Show dashboard
-            this.showDashboard();
-            
-            TelegramApp.ready();
+            // ✅ Check password against CONFIG.ADMIN_PASSWORD
+            if (password === CONFIG.ADMIN_PASSWORD) {
+                this.state.isVerified = true;
+                
+                // Load admin data
+                await this.loadAdminData();
+                
+                // Show dashboard
+                this.showDashboard();
+                
+                TelegramApp.ready();
+                TelegramApp.hapticFeedback('notification', 'success');
+                
+            } else {
+                // Wrong password
+                errorDiv.textContent = 'Incorrect password. Please try again.';
+                errorDiv.classList.remove('hidden');
+                document.getElementById('admin-password').value = '';
+                this.shakeInput();
+                TelegramApp.hapticFeedback('notification', 'error');
+            }
             
         } catch (error) {
             console.error('Verification error:', error);
@@ -104,6 +119,15 @@ const AdminApp = {
         } finally {
             Utils.hideLoading();
         }
+    },
+    
+    // Shake input animation for wrong password
+    shakeInput() {
+        const input = document.getElementById('admin-password');
+        input.classList.add('shake');
+        setTimeout(() => {
+            input.classList.remove('shake');
+        }, 500);
     },
     
     // Show dashboard
@@ -441,37 +465,28 @@ const AdminApp = {
         const user = this.state.users.find(u => u.telegramId === telegramId);
         if (!user) return;
         
-        const result = await TelegramApp.showPopup({
-            title: 'Edit Balance',
-            message: `Current balance: ${Utils.formatCurrency(user.balance, 'MMK')}\n\nEnter new balance amount:`,
-            buttons: [
-                { id: 'cancel', type: 'cancel', text: 'Cancel' },
-                { id: 'ok', type: 'ok', text: 'Update' }
-            ]
-        });
+        const newBalance = prompt(`Current balance: ${Utils.formatCurrency(user.balance, 'MMK')}\n\nEnter new balance amount:`);
         
-        if (result === 'ok') {
-            const newBalance = prompt('Enter new balance:');
-            if (newBalance !== null && !isNaN(newBalance)) {
-                Utils.showLoading('Updating balance...');
-                try {
-                    await Database.updateUserBalance(telegramId, parseFloat(newBalance), 'set');
-                    await this.loadAdminData();
-                    this.renderUsers();
-                    Utils.showToast('Balance updated successfully', 'success');
-                } catch (error) {
-                    console.error('Update balance error:', error);
-                    Utils.showToast('Failed to update balance', 'error');
-                } finally {
-                    Utils.hideLoading();
-                }
+        if (newBalance !== null && !isNaN(newBalance) && newBalance !== '') {
+            Utils.showLoading('Updating balance...');
+            try {
+                await Database.updateUserBalance(telegramId, parseFloat(newBalance), 'set');
+                await this.loadAdminData();
+                this.renderUsers();
+                this.closeUserDetails();
+                Utils.showToast('Balance updated successfully', 'success');
+            } catch (error) {
+                console.error('Update balance error:', error);
+                Utils.showToast('Failed to update balance', 'error');
+            } finally {
+                Utils.hideLoading();
             }
         }
     },
     
     // Ban user prompt
     async banUserPrompt(telegramId) {
-        const confirmed = await TelegramApp.showConfirm('Are you sure you want to ban this user?');
+        const confirmed = confirm('Are you sure you want to ban this user?');
         if (confirmed) {
             const reason = prompt('Enter ban reason:') || 'Violated terms of service';
             await this.banUser(telegramId, reason);
@@ -531,7 +546,7 @@ const AdminApp = {
                         <p><strong>Category:</strong> ${order.categoryName}</p>
                         <p><strong>Input Values:</strong></p>
                         <ul style="margin-left:1rem;font-size:0.9rem;color:var(--text-secondary);">
-                            ${Object.entries(order.inputValues).map(([k, v]) => `<li>${k}: ${v}</li>`).join('')}
+                            ${Object.entries(order.inputValues || {}).map(([k, v]) => `<li>${k}: ${v}</li>`).join('')}
                         </ul>
                         <p style="font-size:0.8rem;color:var(--text-secondary);margin-top:0.5rem;">
                             ${Utils.formatDate(order.createdAt, 'long')}
@@ -554,7 +569,7 @@ const AdminApp = {
     
     // Approve order
     async approveOrder(orderId) {
-        const confirmed = await TelegramApp.showConfirm('Approve this order?');
+        const confirmed = confirm('Approve this order?');
         if (!confirmed) return;
         
         Utils.showLoading('Approving order...');
@@ -575,7 +590,7 @@ const AdminApp = {
     
     // Reject order
     async rejectOrder(orderId) {
-        const confirmed = await TelegramApp.showConfirm('Reject this order? Amount will be refunded.');
+        const confirmed = confirm('Reject this order? Amount will be refunded.');
         if (!confirmed) return;
         
         Utils.showLoading('Rejecting order...');
@@ -650,7 +665,7 @@ const AdminApp = {
     
     // Approve topup
     async approveTopup(topupId) {
-        const confirmed = await TelegramApp.showConfirm('Approve this top-up request?');
+        const confirmed = confirm('Approve this top-up request?');
         if (!confirmed) return;
         
         Utils.showLoading('Approving top-up...');
@@ -671,7 +686,7 @@ const AdminApp = {
     
     // Reject topup
     async rejectTopup(topupId) {
-        const confirmed = await TelegramApp.showConfirm('Reject this top-up request?');
+        const confirmed = confirm('Reject this top-up request?');
         if (!confirmed) return;
         
         Utils.showLoading('Rejecting top-up...');
@@ -804,7 +819,7 @@ const AdminApp = {
     
     // Delete category
     async deleteCategory(categoryId) {
-        const confirmed = await TelegramApp.showConfirm('Delete this category? All products in this category will also be deleted.');
+        const confirmed = confirm('Delete this category? All products in this category will also be deleted.');
         if (!confirmed) return;
         
         Utils.showLoading('Deleting category...');
@@ -971,7 +986,7 @@ const AdminApp = {
     
     // Delete product
     async deleteProduct(productId) {
-        const confirmed = await TelegramApp.showConfirm('Delete this product?');
+        const confirmed = confirm('Delete this product?');
         if (!confirmed) return;
         
         Utils.showLoading('Deleting product...');
@@ -1002,7 +1017,7 @@ const AdminApp = {
         document.getElementById('banner-type1').classList.toggle('hidden', type !== 'type1');
         document.getElementById('banner-type2').classList.toggle('hidden', type !== 'type2');
         
-        const banners = type === 'type1' ? this.state.banners.type1 : this.state.banners.type2;
+        const banners = type === 'type1' ? (this.state.banners.type1 || []) : (this.state.banners.type2 || []);
         const listId = `banners-${type}-list`;
         const list = document.getElementById(listId);
         
@@ -1096,7 +1111,7 @@ const AdminApp = {
     
     // Delete banner
     async deleteBanner(bannerId, type) {
-        const confirmed = await TelegramApp.showConfirm('Delete this banner?');
+        const confirmed = confirm('Delete this banner?');
         if (!confirmed) return;
         
         Utils.showLoading('Deleting banner...');
@@ -1215,7 +1230,7 @@ const AdminApp = {
     
     // Delete input table
     async deleteInputTable(tableId) {
-        const confirmed = await TelegramApp.showConfirm('Delete this input table?');
+        const confirmed = confirm('Delete this input table?');
         if (!confirmed) return;
         
         Utils.showLoading('Deleting...');
@@ -1353,7 +1368,7 @@ const AdminApp = {
     
     // Delete payment
     async deletePayment(paymentId) {
-        const confirmed = await TelegramApp.showConfirm('Delete this payment method?');
+        const confirmed = confirm('Delete this payment method?');
         if (!confirmed) return;
         
         Utils.showLoading('Deleting...');
@@ -1416,7 +1431,7 @@ const AdminApp = {
             return;
         }
         
-        const confirmed = await TelegramApp.showConfirm(`Send this message to all ${this.state.users.length} users?`);
+        const confirmed = confirm(`Send this message to all ${this.state.users.length} users?`);
         if (!confirmed) return;
         
         Utils.showLoading('Broadcasting...');
@@ -1478,7 +1493,7 @@ const AdminApp = {
     
     // Unban user
     async unbanUser(telegramId) {
-        const confirmed = await TelegramApp.showConfirm('Unban this user?');
+        const confirmed = confirm('Unban this user?');
         if (!confirmed) return;
         
         Utils.showLoading('Unbanning user...');
@@ -1692,6 +1707,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const img = await Utils.compressImage(e.target.files[0], 800, 0.8);
             preview.innerHTML = `<img src="${img}" alt="Preview" style="max-width:100%;border-radius:12px;">`;
             preview.classList.remove('hidden');
+        }
+    });
+    
+    // Enter key for password
+    document.getElementById('admin-password')?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            verifyAdmin();
         }
     });
     
