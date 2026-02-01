@@ -16,17 +16,17 @@ const CONFIG = {
     
     // Database BIN IDs (Replace with your actual BIN IDs after creation)
     BINS: {
-        MAIN: 'YOUR_MAIN_BIN_ID',           // Main settings and config
-        USERS: 'YOUR_USERS_BIN_ID',          // Users data
-        PRODUCTS: 'YOUR_PRODUCTS_BIN_ID',    // Products data
-        CATEGORIES: 'YOUR_CATEGORIES_BIN_ID',// Categories data
-        ORDERS: 'YOUR_ORDERS_BIN_ID',        // Orders data
-        TOPUPS: 'YOUR_TOPUPS_BIN_ID',        // Top-up requests
-        BANNERS: 'YOUR_BANNERS_BIN_ID',      // Banners data
-        PAYMENTS: 'YOUR_PAYMENTS_BIN_ID',    // Payment methods
-        INPUT_TABLES: 'YOUR_INPUT_TABLES_BIN_ID', // Input tables
-        IMAGES: 'YOUR_IMAGES_BIN_ID',        // Image storage (base64)
-        BANNED: 'YOUR_BANNED_BIN_ID'         // Banned users
+        MAIN: '697f241743b1c97be95cfcd2',           // Main settings and config
+        USERS: '697f2418ae596e708f08d3f4',          // Users data
+        PRODUCTS: '697f241843b1c97be95cfcd5',    // Products data
+        CATEGORIES: '697f2419ae596e708f08d3f6',// Categories data
+        ORDERS: '697f2419d0ea881f40986834',        // Orders data
+        TOPUPS: '697f241aae596e708f08d3fa',        // Top-up requests
+        BANNERS: '697f241aae596e708f08d3fd',      // Banners data
+        PAYMENTS: '697f241b43b1c97be95cfcdb',    // Payment methods
+        INPUT_TABLES: '697f241b43b1c97be95cfcdd', // Input tables
+        IMAGES: '697f241dd0ea881f4098683a',        // Image storage (base64)
+        BANNED: '697f241c43b1c97be95cfce0'         // Banned users
     },
     
     // App Settings
