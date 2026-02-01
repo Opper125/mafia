@@ -9,12 +9,23 @@ const App = {
         selectedPayment: null,
         inputValues: {},
         user: null,
+        settings: null,
+        categories: [],
+        banners: [],
+        payments: [],
+        products: [],
+        inputTables: [],
+        categoryBanners: [],
+        orders: [],
+        topups: [],
         isLoading: false
     },
     
     // Initialize app
     async init() {
         try {
+            console.log('🚀 Initializing App...');
+            
             // Check if running in Telegram
             if (!TelegramApp.isInTelegram()) {
                 this.showAccessDenied();
@@ -23,6 +34,7 @@ const App = {
             
             // Initialize Telegram WebApp
             const telegramUser = await TelegramApp.init();
+            console.log('✅ Telegram user:', telegramUser);
             
             // Show intro screen
             await this.showIntro();
@@ -44,6 +56,8 @@ const App = {
                 isPremium: telegramUser.is_premium
             });
             
+            console.log('✅ User loaded:', this.state.user);
+            
             // Load app data
             await this.loadAppData();
             
@@ -56,8 +70,10 @@ const App = {
             // Signal ready
             TelegramApp.ready();
             
+            console.log('✅ App initialized successfully!');
+            
         } catch (error) {
-            console.error('App initialization error:', error);
+            console.error('❌ App initialization error:', error);
             this.showAccessDenied();
         }
     },
@@ -93,13 +109,14 @@ const App = {
             // Load settings for logo
             try {
                 const settings = await Database.getSettings();
+                this.state.settings = settings;
                 if (settings.websiteLogo) {
                     introLogo.src = settings.websiteLogo;
                 } else {
-                    introLogo.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 150 150"><rect fill="#8b5cf6" width="150" height="150" rx="30"/><text x="75" y="85" text-anchor="middle" fill="white" font-size="40" font-weight="bold">GS</text></svg>');
+                    introLogo.src = this.getDefaultLogo();
                 }
             } catch (e) {
-                introLogo.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 150 150"><rect fill="#8b5cf6" width="150" height="150" rx="30"/><text x="75" y="85" text-anchor="middle" fill="white" font-size="40" font-weight="bold">GS</text></svg>');
+                introLogo.src = this.getDefaultLogo();
             }
             
             // Create particles
@@ -108,6 +125,10 @@ const App = {
             // Wait for intro duration
             setTimeout(resolve, CONFIG.INTRO_DURATION);
         });
+    },
+    
+    getDefaultLogo() {
+        return 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 150 150"><rect fill="#8b5cf6" width="150" height="150" rx="30"/><text x="75" y="85" text-anchor="middle" fill="white" font-size="40" font-weight="bold">GS</text></svg>');
     },
     
     // Hide intro
@@ -126,6 +147,8 @@ const App = {
     // Load app data
     async loadAppData() {
         try {
+            console.log('📥 Loading app data...');
+            
             const [settings, categories, banners, payments] = await Promise.all([
                 Database.getSettings(),
                 Database.getCategories(),
@@ -138,8 +161,20 @@ const App = {
             this.state.banners = banners;
             this.state.payments = payments;
             
+            // Load user orders and topups
+            if (this.state.user) {
+                const [orders, topups] = await Promise.all([
+                    Database.getOrdersByUser(this.state.user.telegramId),
+                    Database.getTopupsByUser(this.state.user.telegramId)
+                ]);
+                this.state.orders = orders;
+                this.state.topups = topups;
+            }
+            
+            console.log('✅ App data loaded');
+            
         } catch (error) {
-            console.error('Load app data error:', error);
+            console.error('❌ Load app data error:', error);
         }
     },
     
@@ -174,8 +209,12 @@ const App = {
         }
         
         if (this.state.user) {
-            userBalance.textContent = Utils.formatCurrency(this.state.user.balance, '').replace(' ', '');
+            userBalance.textContent = this.formatNumber(this.state.user.balance || 0);
         }
+    },
+    
+    formatNumber(num) {
+        return new Intl.NumberFormat().format(num);
     },
     
     // Update user info
@@ -184,12 +223,13 @@ const App = {
         const userName = document.getElementById('user-name');
         
         if (this.state.user) {
-            userName.textContent = this.state.user.firstName + ' ' + (this.state.user.lastName || '');
+            const name = this.state.user.firstName + ' ' + (this.state.user.lastName || '');
+            userName.textContent = name.trim() || 'User';
             
             if (this.state.user.photoUrl) {
                 userAvatar.src = this.state.user.photoUrl;
             } else {
-                userAvatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(this.state.user.firstName)}&background=8b5cf6&color=fff`;
+                userAvatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(this.state.user.firstName || 'U')}&background=8b5cf6&color=fff`;
             }
         }
     },
@@ -346,7 +386,7 @@ const App = {
                     <input type="text" 
                            id="input-${table.id}" 
                            placeholder="${table.placeholder}"
-                           onchange="App.updateInputValue('${table.id}', this.value)">
+                           onchange="App.updateInputValue('${table.id}', '${table.name}', this.value)">
                 </div>
             `).join('');
             inputSection.classList.remove('hidden');
@@ -359,7 +399,7 @@ const App = {
         if (this.state.products && this.state.products.length > 0) {
             productsGrid.innerHTML = this.state.products.map(product => `
                 <div class="product-card ${this.state.selectedProduct?.id === product.id ? 'selected' : ''}" 
-                     onclick="App.selectProduct('${product.id}')">
+                     onclick="App.selectProduct('${product.id}')" data-product-id="${product.id}">
                     ${product.discount > 0 ? `<span class="product-discount-badge">-${product.discount}%</span>` : ''}
                     <img src="${product.icon}" alt="${product.name}" class="product-icon">
                     <div class="product-name">${product.name}</div>
@@ -404,11 +444,8 @@ const App = {
     },
     
     // Update input value
-    updateInputValue(tableId, value) {
-        const table = this.state.inputTables.find(t => t.id === tableId);
-        if (table) {
-            this.state.inputValues[table.name] = value;
-        }
+    updateInputValue(tableId, tableName, value) {
+        this.state.inputValues[tableName] = value;
     },
     
     // Select product
@@ -421,8 +458,10 @@ const App = {
         // Update UI
         document.querySelectorAll('.product-card').forEach(card => {
             card.classList.remove('selected');
+            if (card.dataset.productId === productId) {
+                card.classList.add('selected');
+            }
         });
-        event.currentTarget.classList.add('selected');
         
         this.updateBuyButton();
     },
@@ -480,7 +519,7 @@ const App = {
         
         const product = this.state.selectedProduct;
         const price = product.discountedPrice || product.price;
-        const balance = this.state.user.balance;
+        const balance = this.state.user.balance || 0;
         const remaining = balance - price;
         
         productSummary.innerHTML = `
@@ -493,12 +532,16 @@ const App = {
             </div>
         `;
         
-        inputSummary.innerHTML = Object.entries(this.state.inputValues).map(([key, value]) => `
-            <div class="input-summary-item">
-                <span>${key}:</span>
-                <strong>${value}</strong>
-            </div>
-        `).join('');
+        if (Object.keys(this.state.inputValues).length > 0) {
+            inputSummary.innerHTML = Object.entries(this.state.inputValues).map(([key, value]) => `
+                <div class="input-summary-item">
+                    <span>${key}:</span>
+                    <strong>${value}</strong>
+                </div>
+            `).join('');
+        } else {
+            inputSummary.innerHTML = '';
+        }
         
         modalPrice.textContent = Utils.formatCurrency(price, product.currency);
         modalBalance.textContent = Utils.formatCurrency(balance, 'MMK');
@@ -511,22 +554,16 @@ const App = {
     // Close buy modal
     closeBuyModal() {
         document.getElementById('buy-modal').classList.add('hidden');
+        document.getElementById('verification-code').value = '';
     },
     
     // Confirm purchase
     async confirmPurchase() {
-        const verificationCode = document.getElementById('verification-code').value;
-        
-        if (!verificationCode) {
-            Utils.showToast('Please enter verification code', 'warning');
-            return;
-        }
-        
         const product = this.state.selectedProduct;
         const price = product.discountedPrice || product.price;
         
         // Check balance
-        if (this.state.user.balance < price) {
+        if ((this.state.user.balance || 0) < price) {
             TelegramApp.hapticFeedback('notification', 'error');
             
             // Increment failed attempts
@@ -575,6 +612,8 @@ const App = {
             
             // Update local user state
             this.state.user.balance -= price;
+            this.state.orders.unshift(order);
+            
             this.updateHeader();
             
             // Close modal and show success
@@ -602,9 +641,9 @@ const App = {
             const otp = TelegramBot.generateOTP();
             await TelegramBot.sendOTP(this.state.user.telegramId, otp);
             
-            // Store OTP temporarily (in production, store server-side)
+            // Store OTP temporarily
             this.state.currentOTP = otp;
-            this.state.otpExpiry = Date.now() + 5 * 60 * 1000; // 5 minutes
+            this.state.otpExpiry = Date.now() + 5 * 60 * 1000;
             
             Utils.showToast('OTP sent to your Telegram!', 'success');
         } catch (error) {
@@ -615,7 +654,8 @@ const App = {
         }
     },
     
-    // Show page
+    // ===== PAGE NAVIGATION =====
+    
     showPage(page) {
         this.state.currentPage = page;
         
@@ -628,8 +668,12 @@ const App = {
         if (page === 'home') {
             document.getElementById('main-app').classList.remove('hidden');
             TelegramApp.hideBackButton();
+            this.loadCategories(); // Refresh categories
         } else {
-            document.getElementById(`${page}-page`).classList.remove('hidden');
+            const pageElement = document.getElementById(`${page}-page`);
+            if (pageElement) {
+                pageElement.classList.remove('hidden');
+            }
             TelegramApp.showBackButton();
         }
         
@@ -638,9 +682,17 @@ const App = {
             item.classList.remove('active');
         });
         
-        const activeNav = document.querySelector(`.nav-item[onclick="showPage('${page}')"]`);
-        if (activeNav) {
-            activeNav.classList.add('active');
+        // Render page content
+        switch (page) {
+            case 'orders':
+                this.renderOrdersPage();
+                break;
+            case 'history':
+                this.renderHistoryPage();
+                break;
+            case 'profile':
+                this.renderProfilePage();
+                break;
         }
     },
     
@@ -653,7 +705,267 @@ const App = {
         }
     },
     
-    // Setup event listeners
+    // ===== ORDERS PAGE =====
+    
+    async renderOrdersPage() {
+        const ordersList = document.getElementById('orders-list');
+        if (!ordersList) return;
+        
+        Utils.showLoading('Loading orders...');
+        
+        try {
+            // Refresh orders from database
+            this.state.orders = await Database.getOrdersByUser(this.state.user.telegramId);
+            
+            if (this.state.orders.length === 0) {
+                ordersList.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-shopping-bag"></i>
+                        <p>No orders yet</p>
+                        <small>Your orders will appear here</small>
+                    </div>
+                `;
+            } else {
+                ordersList.innerHTML = this.state.orders.map(order => `
+                    <div class="order-card">
+                        <div class="order-header">
+                            <span class="order-id">#${order.orderId}</span>
+                            <span class="order-status ${order.status}">${this.getStatusText(order.status)}</span>
+                        </div>
+                        <div class="order-product">
+                            <div class="order-product-info">
+                                <h4>${order.productName}</h4>
+                                <p>${order.categoryName || ''}</p>
+                            </div>
+                        </div>
+                        ${order.inputValues && Object.keys(order.inputValues).length > 0 ? `
+                            <div class="order-inputs">
+                                ${Object.entries(order.inputValues).map(([k, v]) => `
+                                    <span class="input-tag">${k}: ${v}</span>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                        <div class="order-footer">
+                            <span class="order-date">
+                                <i class="fas fa-clock"></i>
+                                ${Utils.formatDate(order.createdAt)}
+                            </span>
+                            <span class="order-price">${Utils.formatCurrency(order.amount, order.currency)}</span>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        } catch (error) {
+            console.error('Render orders error:', error);
+            ordersList.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <p>Failed to load orders</p>
+                </div>
+            `;
+        } finally {
+            Utils.hideLoading();
+        }
+    },
+    
+    getStatusText(status) {
+        switch (status) {
+            case 'pending': return 'Pending';
+            case 'approved': return 'Completed';
+            case 'rejected': return 'Rejected';
+            default: return status;
+        }
+    },
+    
+    // ===== HISTORY PAGE =====
+    
+    async renderHistoryPage(filter = 'all') {
+        const historyList = document.getElementById('history-list');
+        if (!historyList) return;
+        
+        Utils.showLoading('Loading history...');
+        
+        try {
+            // Refresh data
+            const [orders, topups] = await Promise.all([
+                Database.getOrdersByUser(this.state.user.telegramId),
+                Database.getTopupsByUser(this.state.user.telegramId)
+            ]);
+            
+            this.state.orders = orders;
+            this.state.topups = topups;
+            
+            // Build history items
+            let historyItems = [];
+            
+            // Add approved topups
+            if (filter === 'all' || filter === 'topup') {
+                const approvedTopups = this.state.topups.filter(t => t.status === 'approved');
+                approvedTopups.forEach(topup => {
+                    historyItems.push({
+                        type: 'topup',
+                        amount: topup.amount,
+                        description: `Top-up via ${topup.paymentMethod}`,
+                        date: topup.processedAt || topup.createdAt,
+                        status: 'approved'
+                    });
+                });
+            }
+            
+            // Add approved/rejected orders
+            if (filter === 'all' || filter === 'purchase') {
+                const processedOrders = this.state.orders.filter(o => o.status !== 'pending');
+                processedOrders.forEach(order => {
+                    historyItems.push({
+                        type: 'purchase',
+                        amount: order.amount,
+                        description: order.productName,
+                        date: order.processedAt || order.createdAt,
+                        status: order.status,
+                        refunded: order.status === 'rejected'
+                    });
+                });
+            }
+            
+            // Sort by date
+            historyItems.sort((a, b) => new Date(b.date) - new Date(a.date));
+            
+            if (historyItems.length === 0) {
+                historyList.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-history"></i>
+                        <p>No transaction history</p>
+                        <small>Your transactions will appear here</small>
+                    </div>
+                `;
+            } else {
+                historyList.innerHTML = historyItems.map(item => `
+                    <div class="history-item">
+                        <div class="history-icon ${item.type}">
+                            <i class="fas fa-${item.type === 'topup' ? 'plus' : (item.refunded ? 'undo' : 'shopping-cart')}"></i>
+                        </div>
+                        <div class="history-info">
+                            <h4>${item.description}</h4>
+                            <p>${item.type === 'topup' ? 'Balance Top-up' : (item.refunded ? 'Order Refunded' : 'Purchase')}</p>
+                        </div>
+                        <div class="history-amount">
+                            <span class="amount ${item.type === 'topup' || item.refunded ? 'positive' : 'negative'}">
+                                ${item.type === 'topup' || item.refunded ? '+' : '-'}${Utils.formatCurrency(item.amount, 'MMK')}
+                            </span>
+                            <span class="time">${Utils.timeAgo(item.date)}</span>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        } catch (error) {
+            console.error('Render history error:', error);
+            historyList.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <p>Failed to load history</p>
+                </div>
+            `;
+        } finally {
+            Utils.hideLoading();
+        }
+    },
+    
+    showHistoryTab(filter) {
+        // Update tab buttons
+        document.querySelectorAll('.history-tabs .tab-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        event.target.classList.add('active');
+        
+        this.renderHistoryPage(filter);
+    },
+    
+    // ===== PROFILE PAGE =====
+    
+    async renderProfilePage() {
+        // Refresh user data
+        try {
+            const freshUser = await Database.getUserByTelegramId(this.state.user.telegramId);
+            if (freshUser) {
+                this.state.user = freshUser;
+            }
+        } catch (e) {
+            console.warn('Could not refresh user data');
+        }
+        
+        const user = this.state.user;
+        
+        // Update profile elements
+        const profileAvatar = document.getElementById('profile-avatar');
+        const profileName = document.getElementById('profile-name');
+        const profileId = document.getElementById('profile-id');
+        const premiumBadge = document.getElementById('premium-badge');
+        const totalOrders = document.getElementById('total-orders');
+        const approvedOrders = document.getElementById('approved-orders');
+        const totalSpent = document.getElementById('total-spent');
+        
+        // Avatar
+        if (profileAvatar) {
+            if (user.photoUrl) {
+                profileAvatar.src = user.photoUrl;
+            } else {
+                profileAvatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.firstName || 'U')}&background=8b5cf6&color=fff&size=150`;
+            }
+        }
+        
+        // Name
+        if (profileName) {
+            profileName.textContent = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'User';
+        }
+        
+        // Username/ID
+        if (profileId) {
+            profileId.textContent = user.username ? `@${user.username}` : `ID: ${user.telegramId}`;
+        }
+        
+        // Premium badge
+        if (premiumBadge) {
+            if (user.isPremium) {
+                premiumBadge.classList.remove('hidden');
+            } else {
+                premiumBadge.classList.add('hidden');
+            }
+        }
+        
+        // Stats
+        if (totalOrders) {
+            totalOrders.textContent = user.totalOrders || 0;
+        }
+        if (approvedOrders) {
+            approvedOrders.textContent = user.approvedOrders || 0;
+        }
+        if (totalSpent) {
+            totalSpent.textContent = this.formatNumber(user.totalSpent || 0);
+        }
+        
+        // Update theme toggle
+        const themeToggle = document.getElementById('theme-toggle');
+        if (themeToggle) {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            themeToggle.classList.toggle('active', currentTheme === 'dark');
+        }
+    },
+    
+    // ===== NOTIFICATIONS =====
+    
+    showNotificationSettings() {
+        TelegramApp.showAlert('Notifications are enabled by default. You will receive updates about your orders via Telegram.');
+    },
+    
+    // ===== SUPPORT =====
+    
+    showSupport() {
+        const supportUsername = CONFIG.ADMIN_USERNAME || 'OPPER101';
+        TelegramApp.openTelegramLink(`https://t.me/${supportUsername}`);
+    },
+    
+    // ===== SETUP EVENT LISTENERS =====
+    
     setupEventListeners() {
         // Back button
         window.onBackButtonClick = () => {
@@ -663,10 +975,6 @@ const App = {
         // Theme toggle
         const savedTheme = Utils.storage.get('theme', CONFIG.DEFAULT_THEME);
         document.documentElement.setAttribute('data-theme', savedTheme);
-        
-        if (savedTheme === 'dark') {
-            document.getElementById('theme-toggle')?.classList.add('active');
-        }
     },
     
     // Refresh user data
@@ -713,6 +1021,7 @@ async function openTopupModalHandler() {
     
     // Load payment methods
     const payments = await Database.getPaymentMethods();
+    App.state.payments = payments;
     
     if (payments.length === 0) {
         paymentMethods.innerHTML = `
@@ -731,7 +1040,6 @@ async function openTopupModalHandler() {
         `;
     }
     
-    App.state.payments = payments;
     modal.classList.remove('hidden');
 }
 
@@ -739,7 +1047,6 @@ function selectPayment(paymentId) {
     const payment = App.state.payments.find(p => p.id === paymentId);
     App.state.selectedPayment = payment;
     
-    // Show payment details modal
     closeTopupModal();
     openPaymentDetails(payment);
 }
@@ -747,7 +1054,7 @@ function selectPayment(paymentId) {
 function openPaymentDetails(payment) {
     const amount = document.getElementById('topup-amount').value;
     
-    if (!amount || amount < 1000) {
+    if (!amount || parseInt(amount) < 1000) {
         Utils.showToast('Please enter a valid amount (min 1000 MMK)', 'warning');
         document.getElementById('topup-modal').classList.remove('hidden');
         return;
@@ -792,6 +1099,7 @@ function openPaymentDetails(payment) {
 function closePaymentDetails() {
     document.getElementById('payment-details-modal').classList.add('hidden');
     document.getElementById('proof-preview').classList.add('hidden');
+    document.getElementById('upload-area').classList.remove('hidden');
     document.getElementById('submit-topup-btn').disabled = true;
     App.state.proofImage = null;
 }
@@ -807,23 +1115,8 @@ async function handleProofUpload(event) {
     Utils.showLoading('Processing image...');
     
     try {
-        // Check for NSFW content
-        const base64 = await Utils.compressImage(file, 1200, 0.8);
-        const isNSFW = await Utils.checkNSFW(base64);
-        
-        if (isNSFW) {
-            // Ban user immediately
-            await Database.banUser({
-                telegramId: App.state.user.telegramId,
-                username: App.state.user.username,
-                firstName: App.state.user.firstName
-            }, 'Uploaded inappropriate content');
-            
-            await TelegramBot.notifyBan(App.state.user.telegramId, 'Uploaded inappropriate content');
-            
-            App.showBannedScreen();
-            return;
-        }
+        // Compress image more aggressively
+        const base64 = await Utils.compressImage(file, 800, 0.6);
         
         App.state.proofImage = base64;
         
@@ -870,6 +1163,9 @@ async function submitTopup() {
         // Notify admin
         await TelegramBot.notifyNewTopup(topup, App.state.user);
         
+        // Add to local state
+        App.state.topups.unshift(topup);
+        
         closePaymentDetails();
         Utils.showToast('Top-up request submitted!', 'success');
         
@@ -904,7 +1200,9 @@ function toggleTheme() {
     const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
     
     document.documentElement.setAttribute('data-theme', newTheme);
-    toggle.classList.toggle('active');
+    if (toggle) {
+        toggle.classList.toggle('active');
+    }
     Utils.storage.set('theme', newTheme);
     
     TelegramApp.hapticFeedback('impact', 'light');
@@ -919,6 +1217,18 @@ function shareCategory() {
         const shareText = `Check out ${App.state.currentCategory.name} on our Game Shop!`;
         TelegramApp.shareUrl(`https://t.me/${CONFIG.BOT_USERNAME}`, shareText);
     }
+}
+
+function showHistoryTab(filter) {
+    App.showHistoryTab(filter);
+}
+
+function showNotificationSettings() {
+    App.showNotificationSettings();
+}
+
+function showSupport() {
+    App.showSupport();
 }
 
 // ===== Initialize App =====
