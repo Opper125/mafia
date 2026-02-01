@@ -952,39 +952,6 @@ const Database = {
     try {
         console.log('🖼️ Creating banner:', type);
         
-        // Compress image more if needed
-        let image = bannerData.image;
-        
-        // Check image size - JSONBin has limits
-        if (image && image.length > 500000) { // If larger than ~500KB
-            console.log('⚠️ Image too large, compressing...');
-            // Try to compress more
-            const img = new Image();
-            await new Promise((resolve, reject) => {
-                img.onload = resolve;
-                img.onerror = reject;
-                img.src = image;
-            });
-            
-            const canvas = document.createElement('canvas');
-            const maxSize = 800;
-            let { width, height } = img;
-            
-            if (width > height && width > maxSize) {
-                height = (height * maxSize) / width;
-                width = maxSize;
-            } else if (height > maxSize) {
-                width = (width * maxSize) / height;
-                height = maxSize;
-            }
-            
-            canvas.width = width;
-            canvas.height = height;
-            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-            image = canvas.toDataURL('image/jpeg', 0.5);
-            console.log('✅ Image compressed');
-        }
-        
         let data;
         try {
             data = await this.read(this.bins.BANNERS, false);
@@ -998,7 +965,7 @@ const Database = {
         
         const newBanner = {
             id: this.generateId(),
-            image: image,
+            image: bannerData.image,  // Now this is a URL from ImgBB, not base64
             createdAt: new Date().toISOString()
         };
         
