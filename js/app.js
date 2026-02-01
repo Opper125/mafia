@@ -1112,23 +1112,46 @@ async function handleProofUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
     
-    Utils.showLoading('Processing image...');
+    // Check if file is an image
+    if (!file.type.startsWith('image/')) {
+        Utils.showToast('Please select an image file', 'warning');
+        return;
+    }
+    
+    Utils.showLoading('Uploading image...');
     
     try {
-        // Compress image more aggressively
-        const base64 = await Utils.compressImage(file, 800, 0.6);
+        // Upload to ImgBB (free image hosting - no size limit)
+        const formData = new FormData();
+        formData.append('image', file);
         
-        App.state.proofImage = base64;
+        const IMGBB_API_KEY = 'd3b0e9fd43ff0eb762987129a2f21e9c';
         
-        // Show preview
-        document.getElementById('proof-image').src = base64;
-        document.getElementById('proof-preview').classList.remove('hidden');
-        document.getElementById('upload-area').classList.add('hidden');
-        document.getElementById('submit-topup-btn').disabled = false;
+        const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // Save image URL (not base64)
+            App.state.proofImage = result.data.url;
+            
+            // Show preview
+            document.getElementById('proof-image').src = result.data.url;
+            document.getElementById('proof-preview').classList.remove('hidden');
+            document.getElementById('upload-area').classList.add('hidden');
+            document.getElementById('submit-topup-btn').disabled = false;
+            
+            console.log('✅ Image uploaded successfully:', result.data.url);
+        } else {
+            throw new Error(result.error?.message || 'Upload failed');
+        }
         
     } catch (error) {
         console.error('Image upload error:', error);
-        Utils.showToast('Failed to process image', 'error');
+        Utils.showToast('Failed to upload image. Please try again.', 'error');
     } finally {
         Utils.hideLoading();
     }
