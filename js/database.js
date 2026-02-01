@@ -949,41 +949,76 @@ const Database = {
     },
     
     async createBanner(bannerData, type = 'type1') {
-        try {
-            console.log('🖼️ Creating banner:', type);
+    try {
+        console.log('🖼️ Creating banner:', type);
+        
+        // Compress image more if needed
+        let image = bannerData.image;
+        
+        // Check image size - JSONBin has limits
+        if (image && image.length > 500000) { // If larger than ~500KB
+            console.log('⚠️ Image too large, compressing...');
+            // Try to compress more
+            const img = new Image();
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = reject;
+                img.src = image;
+            });
             
-            let data;
-            try {
-                data = await this.read(this.bins.BANNERS, false);
-            } catch (e) {
-                data = { type1: [], type2: [] };
+            const canvas = document.createElement('canvas');
+            const maxSize = 800;
+            let { width, height } = img;
+            
+            if (width > height && width > maxSize) {
+                height = (height * maxSize) / width;
+                width = maxSize;
+            } else if (height > maxSize) {
+                width = (width * maxSize) / height;
+                height = maxSize;
             }
             
-            if (!data.type1) data.type1 = [];
-            if (!data.type2) data.type2 = [];
-            
-            const newBanner = {
-                id: this.generateId(),
-                image: bannerData.image,
-                createdAt: new Date().toISOString()
-            };
-            
-            if (type === 'type2') {
-                newBanner.categoryId = bannerData.categoryId;
-                newBanner.description = bannerData.description || '';
-            }
-            
-            data[type].push(newBanner);
-            await this.update(this.bins.BANNERS, data);
-            
-            console.log('✅ Banner created:', newBanner.id);
-            return newBanner;
-            
-        } catch (error) {
-            console.error('Create banner error:', error);
-            throw error;
+            canvas.width = width;
+            canvas.height = height;
+            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+            image = canvas.toDataURL('image/jpeg', 0.5);
+            console.log('✅ Image compressed');
         }
-    },
+        
+        let data;
+        try {
+            data = await this.read(this.bins.BANNERS, false);
+        } catch (e) {
+            data = { type1: [], type2: [] };
+        }
+        
+        if (!data) data = { type1: [], type2: [] };
+        if (!data.type1) data.type1 = [];
+        if (!data.type2) data.type2 = [];
+        
+        const newBanner = {
+            id: this.generateId(),
+            image: image,
+            createdAt: new Date().toISOString()
+        };
+        
+        if (type === 'type2') {
+            newBanner.categoryId = bannerData.categoryId;
+            newBanner.description = bannerData.description || '';
+        }
+        
+        data[type].push(newBanner);
+        
+        await this.update(this.bins.BANNERS, data);
+        
+        console.log('✅ Banner created:', newBanner.id);
+        return newBanner;
+        
+    } catch (error) {
+        console.error('Create banner error:', error);
+        throw error;
+    }
+},
     
     async deleteBanner(bannerId, type = 'type1') {
         try {
