@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="my">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Admin Panel - Game Top-Up</title>
+    <link rel="stylesheet" href="css/admin.css">
+    <link rel="stylesheet" href="css/animations.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Access Denied Screen -->
+    <div id="access-denied" class="access-denied hidden">
+        <div class="denied-content">
+            <i class="fas fa-shield-alt"></i>
+            <h2>Admin Access Only</h2>
+            <p>You don't have permission to access this panel</p>
+        </div>
+    </div>
+
+    <!-- 2FA Verification Screen -->
+    <div id="verification-screen" class="verification-screen hidden">
+        <div class="verification-content">
+            <div class="verification-icon">
+                <i class="fas fa-lock"></i>
+            </div>
+            <h2>Admin Verification</h2>
+            <p>Enter your Telegram Two-Step Verification Password</p>
+            <div class="verification-input-group">
+                <input type="password" id="admin-password" placeholder="Enter 2FA Password">
+                <button onclick="verifyAdmin()">
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+            </div>
+            <div id="verification-error" class="error-message hidden"></div>
+        </div>
+    </div>
+
+    <!-- Admin Dashboard -->
+    <div id="admin-dashboard" class="admin-dashboard hidden">
+        <!-- Sidebar -->
+        <aside class="admin-sidebar">
+            <div class="sidebar-header">
+                <img id="admin-logo" src="" alt="Logo" class="admin-logo">
+                <h3>Admin Panel</h3>
+            </div>
+            <nav class="sidebar-nav">
+                <a class="nav-link active" onclick="showAdminPage('dashboard')">
+                    <i class="fas fa-tachometer-alt"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a class="nav-link" onclick="showAdminPage('users')">
+                    <i class="fas fa-users"></i>
+                    <span>Users</span>
+                    <span class="badge" id="users-count">0</span>
+                </a>
+                <a class="nav-link" onclick="showAdminPage('orders')">
+                    <i class="fas fa-shopping-cart"></i>
+                    <span>Orders</span>
+                    <span class="badge pending" id="pending-orders">0</span>
+                </a>
+                <a class="nav-link" onclick="showAdminPage('topups')">
+                    <i class="fas fa-wallet"></i>
+                    <span>Top-Up Requests</span>
+                    <span class="badge pending" id="pending-topups">0</span>
+                </a>
+                <a class="nav-link" onclick="showAdminPage('categories')">
+                    <i class="fas fa-th-large"></i>
+                    <span>Categories</span>
+                </a>
+                <a class="nav-link" onclick="showAdminPage('products')">
+                    <i class="fas fa-box"></i>
+                    <span>Products</span>
+                </a>
+                <a class="nav-link" onclick="showAdminPage('banners')">
+                    <i class="fas fa-image"></i>
+                    <span>Banners</span>
+                </a>
+                <a class="nav-link" onclick="showAdminPage('input-tables')">
+                    <i class="fas fa-keyboard"></i>
+                    <span>Input Tables</span>
+                </a>
+                <a class="nav-link" onclick="showAdminPage('payments')">
+                    <i class="fas fa-credit-card"></i>
+                    <span>Payment Methods</span>
+                </a>
+                <a class="nav-link" onclick="showAdminPage('announcements')">
+                    <i class="fas fa-bullhorn"></i>
+                    <span>Announcements</span>
+                </a>
+                <a class="nav-link" onclick="showAdminPage('broadcast')">
+                    <i class="fas fa-paper-plane"></i>
+                    <span>Broadcast</span>
+                </a>
+                <a class="nav-link" onclick="showAdminPage('banned')">
+                    <i class="fas fa-ban"></i>
+                    <span>Banned Users</span>
+                </a>
+                <a class="nav-link" onclick="showAdminPage('settings')">
+                    <i class="fas fa-cog"></i>
+                    <span>Settings</span>
+                </a>
+                <a class="nav-link" onclick="showAdminPage('database')">
+                    <i class="fas fa-database"></i>
+                    <span>Database IDs</span>
+                </a>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="admin-main">
+            <!-- Dashboard Page -->
+            <div id="admin-page-dashboard" class="admin-page">
+                <div class="page-header">
+                    <h1><i class="fas fa-tachometer-alt"></i> Dashboard</h1>
+                    <div class="header-actions">
+                        <span id="admin-time"></span>
+                    </div>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-card purple">
+                        <div class="stat-icon"><i class="fas fa-users"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="stat-users">0</span>
+                            <span class="stat-label">Total Users</span>
+                        </div>
+                    </div>
+                    <div class="stat-card green">
+                        <div class="stat-icon"><i class="fas fa-shopping-cart"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="stat-orders">0</span>
+                            <span class="stat-label">Total Orders</span>
+                        </div>
+                    </div>
+                    <div class="stat-card blue">
+                        <div class="stat-icon"><i class="fas fa-coins"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="stat-revenue">0</span>
+                            <span class="stat-label">Total Revenue (MMK)</span>
+                        </div>
+                    </div>
+                    <div class="stat-card orange">
+                        <div class="stat-icon"><i class="fas fa-clock"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="stat-pending">0</span>
+                            <span class="stat-label">Pending Orders</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="dashboard-charts">
+                    <div class="chart-card">
+                        <h3>Recent Orders</h3>
+                        <div class="recent-orders-list" id="recent-orders">
+                            <!-- Recent orders will be loaded here -->
+                        </div>
+                    </div>
+                    <div class="chart-card">
+                        <h3>Recent Top-Ups</h3>
+                        <div class="recent-topups-list" id="recent-topups">
+                            <!-- Recent topups will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Users Page -->
+            <div id="admin-page-users" class="admin-page hidden">
+                <div class="page-header">
+                    <h1><i class="fas fa-users"></i> Users Management</h1>
+                    <div class="search-bar">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="Search users..." id="search-users">
+                    </div>
+                </div>
+                <div class="users-table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Telegram ID</th>
+                                <th>Balance</th>
+                                <th>Orders</th>
+                                <th>Premium</th>
+                                <th>Joined</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-table-body">
+                            <!-- Users will be loaded here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Orders Page -->
+            <div id="admin-page-orders" class="admin-page hidden">
+                <div class="page-header">
+                    <h1><i class="fas fa-shopping-cart"></i> Orders Management</h1>
+                    <div class="filter-tabs">
+                        <button class="filter-btn active" onclick="filterOrders('all')">All</button>
+                        <button class="filter-btn" onclick="filterOrders('pending')">Pending</button>
+                        <button class="filter-btn" onclick="filterOrders('approved')">Approved</button>
+                        <button class="filter-btn" onclick="filterOrders('rejected')">Rejected</button>
+                    </div>
+                </div>
+                <div class="orders-list" id="admin-orders-list">
+                    <!-- Orders will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Top-Ups Page -->
+            <div id="admin-page-topups" class="admin-page hidden">
+                <div class="page-header">
+                    <h1><i class="fas fa-wallet"></i> Top-Up Requests</h1>
+                    <div class="filter-tabs">
+                        <button class="filter-btn active" onclick="filterTopups('all')">All</button>
+                        <button class="filter-btn" onclick="filterTopups('pending')">Pending</button>
+                        <button class="filter-btn" onclick="filterTopups('approved')">Approved</button>
+                        <button class="filter-btn" onclick="filterTopups('rejected')">Rejected</button>
+                    </div>
+                </div>
+                <div class="topups-list" id="admin-topups-list">
+                    <!-- Topups will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Categories Page -->
+            <div id="admin-page-categories" class="admin-page hidden">
+                <div class="page-header">
+                    <h1><i class="fas fa-th-large"></i> Categories</h1>
+                    <button class="add-btn" onclick="showAddCategory()">
+                        <i class="fas fa-plus"></i> Add Category
+                    </button>
+                </div>
+                <div class="categories-list" id="admin-categories-list">
+                    <!-- Categories will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Products Page -->
+            <div id="admin-page-products" class="admin-page hidden">
+                <div class="page-header">
+                    <h1><i class="fas fa-box"></i> Products</h1>
+                    <button class="add-btn" onclick="showAddProduct()">
+                        <i class="fas fa-plus"></i> Add Product
+                    </button>
+                </div>
+                <div class="products-filter">
+                    <select id="filter-category" onchange="filterProductsByCategory()">
+                        <option value="all">All Categories</option>
+                    </select>
+                </div>
+                <div class="products-list" id="admin-products-list">
+                    <!-- Products will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Banners Page -->
+            <div id="admin-page-banners" class="admin-page hidden">
+                <div class="page-header">
+                    <h1><i class="fas fa-image"></i> Banners</h1>
+                </div>
+                <div class="banner-tabs">
+                    <button class="tab-btn active" onclick="showBannerType('type1')">Type 1 (Homepage)</button>
+                    <button class="tab-btn" onclick="showBannerType('type2')">Type 2 (Category)</button>
+                </div>
+                <div id="banner-type1" class="banner-section">
+                    <button class="add-btn" onclick="showAddBanner('type1')">
+                        <i class="fas fa-plus"></i> Add Homepage Banner
+                    </button>
+                    <div class="banners-list" id="banners-type1-list">
+                        <!-- Type 1 banners -->
+                    </div>
+                </div>
+                <div id="banner-type2" class="banner-section hidden">
+                    <button class="add-btn" onclick="showAddBanner('type2')">
+                        <i class="fas fa-plus"></i> Add Category Banner
+                    </button>
+                    <div class="banners-list" id="banners-type2-list">
+                        <!-- Type 2 banners -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Input Tables Page -->
+            <div id="admin-page-input-tables" class="admin-page hidden">
+                <div class="page-header">
+                    <h1><i class="fas fa-keyboard"></i> Input Tables</h1>
+                    <button class="add-btn" onclick="showAddInputTable()">
+                        <i class="fas fa-plus"></i> Add Input Table
+                    </button>
+                </div>
+                <div class="input-tables-list" id="admin-input-tables-list">
+                    <!-- Input tables will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Payment Methods Page -->
+            <div id="admin-page-payments" class="admin-page hidden">
+                <div class="page-header">
+                    <h1><i class="fas fa-credit-card"></i> Payment Methods</h1>
+                    <button class="add-btn" onclick="showAddPayment()">
+                        <i class="fas fa-plus"></i> Add Payment Method
+                    </button>
+                </div>
+                <div class="payments-list" id="admin-payments-list">
+                    <!-- Payment methods will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Announcements Page -->
+            <div id="admin-page-announcements" class="admin-page hidden">
+                <div class="page-header">
+                    <h1><i class="fas fa-bullhorn"></i> Announcements</h1>
+                </div>
+                <div class="announcement-form">
+                    <textarea id="announcement-text" placeholder="Enter announcement text..."></textarea>
+                    <button class="save-btn" onclick="saveAnnouncement()">
+                        <i class="fas fa-save"></i> Save Announcement
+                    </button>
+                </div>
+                <div class="current-announcement">
+                    <h3>Current Announcement:</h3>
+                    <p id="current-announcement-text">No announcement set</p>
+                </div>
+            </div>
+
+            <!-- Broadcast Page -->
+            <div id="admin-page-broadcast" class="admin-page hidden">
+                <div class="page-header">
+                    <h1><i class="fas fa-paper-plane"></i> Broadcast Message</h1>
+                </div>
+                <div class="broadcast-form">
+                    <div class="form-group">
+                        <label>Message</label>
+                        <textarea id="broadcast-message" placeholder="Enter broadcast message..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Image (Optional)</label>
+                        <div class="upload-area" onclick="triggerBroadcastImageUpload()">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p>Click to upload image</p>
+                            <input type="file" id="broadcast-image" accept="image/*" hidden>
+                        </div>
+                        <div id="broadcast-image-preview" class="image-preview hidden"></div>
+                    </div>
+                    <button class="send-btn" onclick="sendBroadcast()">
+                        <i class="fas fa-paper-plane"></i> Send to All Users
+                    </button>
+                </div>
+            </div>
+
+            <!-- Banned Users Page -->
+            <div id="admin-page-banned" class="admin-page hidden">
+                <div class="page-header">
+                    <h1><i class="fas fa-ban"></i> Banned Users</h1>
+                </div>
+                <div class="banned-list" id="admin-banned-list">
+                    <!-- Banned users will be loaded here -->
+                </div>
+            </div>
+
+            <!-- Settings Page -->
+            <div id="admin-page-settings" class="admin-page hidden">
+                <div class="page-header">
+                    <h1><i class="fas fa-cog"></i> Settings</h1>
+                </div>
+                <div class="settings-form">
+                    <div class="form-group">
+                        <label>Website Name</label>
+                        <input type="text" id="website-name" placeholder="Enter website name">
+                    </div>
+                    <div class="form-group">
+                        <label>Website Logo</label>
+                        <div class="upload-area" onclick="triggerLogoUpload()">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p>Click to upload logo</p>
+                            <input type="file" id="website-logo" accept="image/*" hidden>
+                        </div>
+                        <div id="logo-preview" class="image-preview">
+                            <img id="current-logo" src="" alt="Current Logo">
+                        </div>
+                    </div>
+                    <button class="save-btn" onclick="saveSettings()">
+                        <i class="fas fa-save"></i> Save Settings
+                    </button>
+                </div>
+            </div>
+
+            <!-- Database IDs Page -->
+            <div id="admin-page-database" class="admin-page hidden">
+                <div class="page-header">
+                    <h1><i class="fas fa-database"></i> Database Configuration</h1>
+                </div>
+                <div class="database-info">
+                    <div class="info-card">
+                        <h3>JSONBin Configuration</h3>
+                        <p>Copy these IDs to your config.js file</p>
+                    </div>
+                    <div class="database-ids">
+                        <div class="id-item">
+                            <label>Main Database BIN ID:</label>
+                            <div class="id-value">
+                                <code id="main-bin-id">Loading...</code>
+                                <button onclick="copyId('main-bin-id')"><i class="fas fa-copy"></i></button>
+                            </div>
+                        </div>
+                        <div class="id-item">
+                            <label>Users BIN ID:</label>
+                            <div class="id-value">
+                                <code id="users-bin-id">Loading...</code>
+                                <button onclick="copyId('users-bin-id')"><i class="fas fa-copy"></i></button>
+                            </div>
+                        </div>
+                        <div class="id-item">
+                            <label>Products BIN ID:</label>
+                            <div class="id-value">
+                                <code id="products-bin-id">Loading...</code>
+                                <button onclick="copyId('products-bin-id')"><i class="fas fa-copy"></i></button>
+                            </div>
+                        </div>
+                        <div class="id-item">
+                            <label>Categories BIN ID:</label>
+                            <div class="id-value">
+                                <code id="categories-bin-id">Loading...</code>
+                                <button onclick="copyId('categories-bin-id')"><i class="fas fa-copy"></i></button>
+                            </div>
+                        </div>
+                        <div class="id-item">
+                            <label>Orders BIN ID:</label>
+                            <div class="id-value">
+                                <code id="orders-bin-id">Loading...</code>
+                                <button onclick="copyId('orders-bin-id')"><i class="fas fa-copy"></i></button>
+                            </div>
+                        </div>
+                        <div class="id-item">
+                            <label>Settings BIN ID:</label>
+                            <div class="id-value">
+                                <code id="settings-bin-id">Loading...</code>
+                                <button onclick="copyId('settings-bin-id')"><i class="fas fa-copy"></i></button>
+                            </div>
+                        </div>
+                        <div class="id-item">
+                            <label>Images BIN ID:</label>
+                            <div class="id-value">
+                                <code id="images-bin-id">Loading...</code>
+                                <button onclick="copyId('images-bin-id')"><i class="fas fa-copy"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Add Category Modal -->
+    <div id="add-category-modal" class="modal hidden">
+        <div class="modal-overlay" onclick="closeAddCategory()"></div>
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h3><i class="fas fa-plus"></i> Add Category</h3>
+                <button class="close-btn" onclick="closeAddCategory()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Category Name</label>
+                    <input type="text" id="category-name" placeholder="Enter category name">
+                </div>
+                <div class="form-group">
+                    <label>Category Icon</label>
+                    <div class="upload-area" onclick="triggerCategoryIconUpload()">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <p>Click to upload icon</p>
+                        <input type="file" id="category-icon" accept="image/*" hidden>
+                    </div>
+                    <div id="category-icon-preview" class="image-preview hidden"></div>
+                </div>
+                <div class="form-group">
+                    <label>Country Flag</label>
+                    <select id="category-flag">
+                        <option value="">Select Country</option>
+                        <option value="🇲🇲">🇲🇲 Myanmar</option>
+                        <option value="🇺🇸">🇺🇸 USA</option>
+                        <option value="🇨🇳">🇨🇳 China</option>
+                        <option value="🇯🇵">🇯🇵 Japan</option>
+                        <option value="🇰🇷">🇰🇷 Korea</option>
+                        <option value="🇹🇭">🇹🇭 Thailand</option>
+                        <option value="🇻🇳">🇻🇳 Vietnam</option>
+                        <option value="🇮🇩">🇮🇩 Indonesia</option>
+                        <option value="🇵🇭">🇵🇭 Philippines</option>
+                        <option value="🇲🇾">🇲🇾 Malaysia</option>
+                        <option value="🌏">🌏 Global</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="has-discount">
+                        <span>Has Discount</span>
+                    </label>
+                </div>
+                <button class="save-btn" onclick="saveCategory()">
+                    <i class="fas fa-save"></i> Save Category
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Product Modal -->
+    <div id="add-product-modal" class="modal hidden">
+        <div class="modal-overlay" onclick="closeAddProduct()"></div>
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h3><i class="fas fa-plus"></i> Add Product</h3>
+                <button class="close-btn" onclick="closeAddProduct()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Select Category</label>
+                    <select id="product-category">
+                        <option value="">Select Category</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Product Name (Amount)</label>
+                    <input type="text" id="product-name" placeholder="e.g., 60 UC">
+                </div>
+                <div class="form-group">
+                    <label>Price</label>
+                    <div class="price-input-group">
+                        <input type="number" id="product-price" placeholder="Enter price">
+                        <select id="product-currency">
+                            <option value="MMK">MMK</option>
+                            <option value="¥">¥ (CNY)</option>
+                            <option value="$">$ (USD)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Discount (%)</label>
+                    <input type="number" id="product-discount" placeholder="0" min="0" max="100">
+                </div>
+                <div class="form-group">
+                    <label>Product Icon</label>
+                    <div class="upload-area" onclick="triggerProductIconUpload()">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <p>Click to upload icon</p>
+                        <input type="file" id="product-icon" accept="image/*" hidden>
+                    </div>
+                    <div id="product-icon-preview" class="image-preview hidden"></div>
+                </div>
+                <div class="form-group">
+                    <label>Delivery Time</label>
+                    <select id="product-delivery">
+                        <option value="instant">Instant</option>
+                        <option value="30min">30 Minutes</option>
+                        <option value="1hour">1 Hour</option>
+                        <option value="2hours">2 Hours</option>
+                        <option value="24hours">24 Hours</option>
+                    </select>
+                </div>
+                <button class="save-btn" onclick="saveProduct()">
+                    <i class="fas fa-save"></i> Save Product
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Banner Modal -->
+    <div id="add-banner-modal" class="modal hidden">
+        <div class="modal-overlay" onclick="closeAddBanner()"></div>
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h3><i class="fas fa-plus"></i> Add Banner</h3>
+                <button class="close-btn" onclick="closeAddBanner()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group" id="banner-category-group" style="display:none;">
+                    <label>Select Category</label>
+                    <select id="banner-category">
+                        <option value="">Select Category</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Banner Image (2560x1440 recommended)</label>
+                    <div class="upload-area large" onclick="triggerBannerUpload()">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <p>Click to upload banner</p>
+                        <input type="file" id="banner-image" accept="image/*" hidden>
+                    </div>
+                    <div id="banner-image-preview" class="image-preview hidden"></div>
+                </div>
+                <div class="form-group" id="banner-text-group" style="display:none;">
+                    <label>Banner Description/Guide</label>
+                    <textarea id="banner-text" placeholder="Enter description or guide text..."></textarea>
+                </div>
+                <button class="save-btn" onclick="saveBanner()">
+                    <i class="fas fa-save"></i> Save Banner
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Input Table Modal -->
+    <div id="add-input-table-modal" class="modal hidden">
+        <div class="modal-overlay" onclick="closeAddInputTable()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-plus"></i> Add Input Table</h3>
+                <button class="close-btn" onclick="closeAddInputTable()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Select Category</label>
+                    <select id="input-table-category">
+                        <option value="">Select Category</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Input Name</label>
+                    <input type="text" id="input-table-name" placeholder="e.g., Player UID">
+                </div>
+                <div class="form-group">
+                    <label>Placeholder Text</label>
+                    <input type="text" id="input-table-placeholder" placeholder="e.g., Enter your UID here">
+                </div>
+                <button class="save-btn" onclick="saveInputTable()">
+                    <i class="fas fa-save"></i> Save Input Table
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Payment Modal -->
+    <div id="add-payment-modal" class="modal hidden">
+        <div class="modal-overlay" onclick="closeAddPayment()"></div>
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h3><i class="fas fa-plus"></i> Add Payment Method</h3>
+                <button class="close-btn" onclick="closeAddPayment()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Payment Name</label>
+                    <input type="text" id="payment-name" placeholder="e.g., KBZ Pay">
+                </div>
+                <div class="form-group">
+                    <label>Payment Address/Number</label>
+                    <input type="text" id="payment-address" placeholder="e.g., 09xxxxxxxxx">
+                </div>
+                <div class="form-group">
+                    <label>Account Name</label>
+                    <input type="text" id="payment-account-name" placeholder="e.g., Maung Maung">
+                </div>
+                <div class="form-group">
+                    <label>Note/Instructions</label>
+                    <textarea id="payment-note" placeholder="Enter any notes or instructions..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Payment Icon</label>
+                    <div class="upload-area" onclick="triggerPaymentIconUpload()">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <p>Click to upload icon</p>
+                        <input type="file" id="payment-icon" accept="image/*" hidden>
+                    </div>
+                    <div id="payment-icon-preview" class="image-preview hidden"></div>
+                </div>
+                <button class="save-btn" onclick="savePayment()">
+                    <i class="fas fa-save"></i> Save Payment Method
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Details Modal -->
+    <div id="user-details-modal" class="modal hidden">
+        <div class="modal-overlay" onclick="closeUserDetails()"></div>
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h3><i class="fas fa-user"></i> User Details</h3>
+                <button class="close-btn" onclick="closeUserDetails()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="user-details-content">
+                <!-- User details will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="admin-toast" class="toast hidden">
+        <div class="toast-icon"></div>
+        <span class="toast-message"></span>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="admin-loading" class="loading-overlay hidden">
+        <div class="loader">
+            <div class="loader-ring"></div>
+            <span>Processing...</span>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/database.js"></script>
+    <script src="js/telegram.js"></script>
+    <script src="js/admin.js"></script>
+</body>
+</html>
