@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Privacy Policy for Mafia Game Shop - Telegram Bot Gaming Top-Up Service">
+    <meta name="robots" content="index, follow">
+    <title>Privacy Policy - Mafia Game Shop</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="https://i.ibb.co/favicon.png">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: #1a1a25;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-primary: #7c3aed;
+            --accent-secondary: #a78bfa;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --border: rgba(255, 255, 255, 0.1);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.8;
+            min-height: 100vh;
+        }
+        
+        /* Background Effect */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                radial-gradient(ellipse at top, rgba(124, 58, 237, 0.15) 0%, transparent 50%),
+                radial-gradient(ellipse at bottom right, rgba(59, 130, 246, 0.1) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: -1;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem;
+        }
+        
+        /* Header */
+        .header {
+            text-align: center;
+            padding: 3rem 0;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 3rem;
+        }
+        
+        .logo {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, var(--accent-primary), #3b82f6);
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem;
+            font-size: 2rem;
+            color: white;
+            box-shadow: 0 8px 32px rgba(124, 58, 237, 0.3);
+        }
+        
+        .header h1 {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, var(--accent-primary), #3b82f6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .header p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+        
+        .last-updated {
+            display: inline-block;
+            margin-top: 1rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-card);
+            border-radius: 50px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+        }
+        
+        /* Navigation */
+        .nav-box {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            border: 1px solid var(--border);
+        }
+        
+        .nav-box h3 {
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            color: var(--accent-secondary);
+        }
+        
+        .nav-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        
+        .nav-links a {
+            padding: 0.5rem 1rem;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.85rem;
+            transition: all 0.3s ease;
+            border: 1px solid transparent;
+        }
+        
+        .nav-links a:hover {
+            background: var(--accent-primary);
+            color: white;
+            border-color: var(--accent-primary);
+        }
+        
+        /* Sections */
+        .section {
+            background: var(--bg-card);
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--border);
+            transition: all 0.3s ease;
+        }
+        
+        .section:hover {
+            border-color: rgba(124, 58, 237, 0.3);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        }
+        
+        .section-icon {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, var(--accent-primary), #3b82f6);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1rem;
+            font-size: 1.3rem;
+            color: white;
+        }
+        
+        .section h2 {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+        }
+        
+        .section h3 {
+            font-size: 1.1rem;
+            margin: 1.5rem 0 0.75rem;
+            color: var(--accent-secondary);
+        }
+        
+        .section p {
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+        }
+        
+        .section ul {
+            list-style: none;
+            margin: 1rem 0;
+        }
+        
+        .section ul li {
+            position: relative;
+            padding-left: 1.75rem;
+            margin-bottom: 0.75rem;
+            color: var(--text-secondary);
+        }
+        
+        .section ul li::before {
+            content: '✓';
+            position: absolute;
+            left: 0;
+            color: var(--success);
+            font-weight: bold;
+        }
+        
+        /* Highlight Box */
+        .highlight-box {
+            background: rgba(124, 58, 237, 0.1);
+            border: 1px solid rgba(124, 58, 237, 0.3);
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin: 1rem 0;
+        }
+        
+        .highlight-box.warning {
+            background: rgba(245, 158, 11, 0.1);
+            border-color: rgba(245, 158, 11, 0.3);
+        }
+        
+        .highlight-box.danger {
+            background: rgba(239, 68, 68, 0.1);
+            border-color: rgba(239, 68, 68, 0.3);
+        }
+        
+        .highlight-box.success {
+            background: rgba(16, 185, 129, 0.1);
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+        
+        .highlight-box p {
+            margin: 0;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+        
+        .highlight-box i {
+            margin-top: 0.25rem;
+        }
+        
+        /* Security Badge */
+        .security-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: linear-gradient(135deg, var(--success), #059669);
+            color: white;
+            border-radius: 50px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        
+        /* Contact Card */
+        .contact-card {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            margin: 0.75rem 0;
+            border: 1px solid var(--border);
+            transition: all 0.3s ease;
+        }
+        
+        .contact-card:hover {
+            border-color: var(--accent-primary);
+            transform: translateX(5px);
+        }
+        
+        .contact-card i {
+            width: 40px;
+            height: 40px;
+            background: var(--accent-primary);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        
+        .contact-card .info h4 {
+            font-size: 0.9rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .contact-card .info p {
+            font-size: 0.85rem;
+            margin: 0;
+            color: var(--accent-secondary);
+        }
+        
+        /* Admin Info */
+        .admin-info {
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.2), rgba(59, 130, 246, 0.1));
+            border: 1px solid rgba(124, 58, 237, 0.3);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+        }
+        
+        .admin-info h4 {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            color: var(--accent-secondary);
+        }
+        
+        .admin-info .admin-detail {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .admin-info .admin-detail:last-child {
+            border-bottom: none;
+        }
+        
+        .admin-info .admin-detail span:first-child {
+            color: var(--text-secondary);
+        }
+        
+        .admin-info .admin-detail span:last-child {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+        
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 3rem 0;
+            border-top: 1px solid var(--border);
+            margin-top: 3rem;
+        }
+        
+        .footer p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+        
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+        }
+        
+        .footer-links a {
+            color: var(--accent-secondary);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.3s ease;
+        }
+        
+        .footer-links a:hover {
+            color: var(--accent-primary);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+            
+            .header h1 {
+                font-size: 1.75rem;
+            }
+            
+            .section {
+                padding: 1.5rem;
+            }
+            
+            .nav-links {
+                flex-direction: column;
+            }
+            
+            .nav-links a {
+                text-align: center;
+            }
+        }
+        
+        /* Scroll to top button */
+        .scroll-top {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            width: 50px;
+            height: 50px;
+            background: var(--accent-primary);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            cursor: pointer;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 20px rgba(124, 58, 237, 0.4);
+            z-index: 1000;
+        }
+        
+        .scroll-top.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .scroll-top:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 30px rgba(124, 58, 237, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <i class="fas fa-gamepad"></i>
+            </div>
+            <h1>Privacy Policy</h1>
+            <p>Mafia Game Shop - Telegram Bot Gaming Top-Up Service</p>
+            <span class="last-updated">
+                <i class="fas fa-calendar-alt"></i> Last Updated: January 2025
+            </span>
+        </header>
+        
+        <!-- Quick Navigation -->
+        <div class="nav-box">
+            <h3><i class="fas fa-list"></i> Quick Navigation</h3>
+            <div class="nav-links">
+                <a href="#introduction">Introduction</a>
+                <a href="#information-collection">Information Collection</a>
+                <a href="#data-usage">Data Usage</a>
+                <a href="#security">Security</a>
+                <a href="#admin-access">Admin Access</a>
+                <a href="#payments">Payments</a>
+                <a href="#user-rights">User Rights</a>
+                <a href="#bot-terms">Bot Terms</a>
+                <a href="#third-party">Third Party</a>
+                <a href="#contact">Contact</a>
+            </div>
+        </div>
+        
+        <!-- Introduction -->
+        <section class="section" id="introduction">
+            <div class="section-icon">
+                <i class="fas fa-shield-alt"></i>
+            </div>
+            <h2>1. Introduction</h2>
+            <p>Welcome to <strong>Mafia Game Shop</strong> ("we," "our," or "us"). We operate a Telegram-based gaming top-up service through our bot <strong>@mafia_gameshopbot</strong> and website. This Privacy Policy explains how we collect, use, protect, and handle your personal information.</p>
+            
+            <div class="highlight-box success">
+                <p>
+                    <i class="fas fa-check-circle"></i>
+                    <span>By using our services, you agree to the collection and use of information in accordance with this policy. We are committed to protecting your privacy and ensuring the security of your data.</span>
+                </p>
+            </div>
+            
+            <p>This policy applies to:</p>
+            <ul>
+                <li>Our Telegram Bot (@mafia_gameshopbot)</li>
+                <li>Our Web Application (mafiad9.vercel.app)</li>
+                <li>All related services and features</li>
+            </ul>
+        </section>
+        
+        <!-- Information Collection -->
+        <section class="section" id="information-collection">
+            <div class="section-icon">
+                <i class="fas fa-database"></i>
+            </div>
+            <h2>2. Information We Collect</h2>
+            
+            <h3>2.1 Information from Telegram</h3>
+            <p>When you use our Telegram bot, we automatically receive:</p>
+            <ul>
+                <li>Your Telegram User ID (unique identifier)</li>
+                <li>Your Telegram Username (if set)</li>
+                <li>Your First Name and Last Name</li>
+                <li>Your Profile Photo URL (if public)</li>
+                <li>Telegram Premium Status</li>
+            </ul>
+            
+            <h3>2.2 Transaction Information</h3>
+            <p>When you make purchases or top-ups, we collect:</p>
+            <ul>
+                <li>Order details and purchase history</li>
+                <li>Top-up amounts and payment methods used</li>
+                <li>Payment proof images (for verification)</li>
+                <li>Game account information you provide (e.g., Player ID)</li>
+            </ul>
+            
+            <h3>2.3 Usage Data</h3>
+            <p>We automatically collect:</p>
+            <ul>
+                <li>Interaction timestamps and activity logs</li>
+                <li>Device and browser information</li>
+                <li>Session data for security purposes</li>
+            </ul>
+            
+            <div class="highlight-box warning">
+                <p>
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span><strong>Important:</strong> We never collect or store your banking passwords, credit card CVV numbers, or any sensitive financial credentials.</span>
+                </p>
+            </div>
+        </section>
+        
+        <!-- Data Usage -->
+        <section class="section" id="data-usage">
+            <div class="section-icon">
+                <i class="fas fa-cogs"></i>
+            </div>
+            <h2>3. How We Use Your Information</h2>
+            
+            <p>We use collected information for the following purposes:</p>
+            
+            <h3>3.1 Service Delivery</h3>
+            <ul>
+                <li>Process your game top-up orders</li>
+                <li>Manage your account balance</li>
+                <li>Deliver purchased products and services</li>
+                <li>Send order confirmations and updates</li>
+            </ul>
+            
+            <h3>3.2 Security & Verification</h3>
+            <ul>
+                <li>Verify payment proofs and transactions</li>
+                <li>Prevent fraud and unauthorized access</li>
+                <li>Detect and block malicious activities</li>
+                <li>Enforce our terms of service</li>
+            </ul>
+            
+            <h3>3.3 Communication</h3>
+            <ul>
+                <li>Respond to your inquiries and support requests</li>
+                <li>Send important service announcements</li>
+                <li>Notify you about order status changes</li>
+            </ul>
+            
+            <h3>3.4 Improvement</h3>
+            <ul>
+                <li>Analyze usage patterns to improve services</li>
+                <li>Develop new features and products</li>
+                <li>Optimize user experience</li>
+            </ul>
+        </section>
+        
+        <!-- Security Measures -->
+        <section class="section" id="security">
+            <div class="section-icon">
+                <i class="fas fa-lock"></i>
+            </div>
+            <h2>4. Security Measures</h2>
+            
+            <div class="security-badge">
+                <i class="fas fa-shield-alt"></i>
+                Enterprise-Grade Security
+            </div>
+            
+            <p>We implement comprehensive security measures to protect your data:</p>
+            
+            <h3>4.1 Data Protection</h3>
+            <ul>
+                <li>All data transmissions are encrypted using HTTPS/TLS</li>
+                <li>Secure API communications with authentication tokens</li>
+                <li>Regular security audits and vulnerability assessments</li>
+                <li>Data stored in secure, access-controlled databases</li>
+            </ul>
+            
+            <h3>4.2 Access Control</h3>
+            <ul>
+                <li>Strict admin access limited to authorized personnel only</li>
+                <li>Multi-factor authentication for admin accounts</li>
+                <li>Session management and automatic timeouts</li>
+                <li>IP-based access monitoring and logging</li>
+            </ul>
+            
+            <h3>4.3 Bot Security</h3>
+            <ul>
+                <li>Telegram WebApp validation for all requests</li>
+                <li>User authentication through Telegram's secure protocol</li>
+                <li>Rate limiting to prevent abuse</li>
+                <li>Automatic ban system for malicious users</li>
+            </ul>
+            
+            <div class="highlight-box success">
+                <p>
+                    <i class="fas fa-user-shield"></i>
+                    <span>Your account is protected by Telegram's authentication system. Only you can access your account through your Telegram identity.</span>
+                </p>
+            </div>
+        </section>
+        
+        <!-- Admin Access -->
+        <section class="section" id="admin-access">
+            <div class="section-icon">
+                <i class="fas fa-user-cog"></i>
+            </div>
+            <h2>5. Administrative Access</h2>
+            
+            <p>Access to the administrative panel and user data is strictly controlled and limited to authorized personnel only.</p>
+            
+            <div class="admin-info">
+                <h4><i class="fas fa-crown"></i> Authorized Administrator</h4>
+                <div class="admin-detail">
+                    <span>Telegram ID:</span>
+                    <span>1538232799</span>
+                </div>
+                <div class="admin-detail">
+                    <span>Username:</span>
+                    <span>@OPPER101</span>
+                </div>
+                <div class="admin-detail">
+                    <span>Name:</span>
+                    <span>ᴾ ᴳ ᴼ ᴾ ᴾ ᴱ ᴿ</span>
+                </div>
+                <div class="admin-detail">
+                    <span>Access Level:</span>
+                    <span>Full Administrative Control</span>
+                </div>
+            </div>
+            
+            <h3>5.1 Admin Capabilities</h3>
+            <ul>
+                <li>View and manage user accounts</li>
+                <li>Process orders and top-up requests</li>
+                <li>Manage products, categories, and pricing</li>
+                <li>Handle refunds and disputes</li>
+                <li>Ban/unban users for policy violations</li>
+                <li>Access transaction history and analytics</li>
+            </ul>
+            
+            <h3>5.2 Security Restrictions</h3>
+            <ul>
+                <li>Admin panel is accessible only through Telegram WebApp</li>
+                <li>Telegram ID verification required for admin access</li>
+                <li>All admin actions are logged and monitored</li>
+                <li>No third-party admin access is permitted</li>
+            </ul>
+            
+            <div class="highlight-box danger">
+                <p>
+                    <i class="fas fa-ban"></i>
+                    <span><strong>Warning:</strong> Any attempt to hack, breach, or gain unauthorized access to admin systems will result in immediate permanent ban and may be reported to relevant authorities.</span>
+                </p>
+            </div>
+        </section>
+        
+        <!-- Payment Security -->
+        <section class="section" id="payments">
+            <div class="section-icon">
+                <i class="fas fa-credit-card"></i>
+            </div>
+            <h2>6. Payment Security</h2>
+            
+            <p>We take payment security extremely seriously to protect your financial transactions.</p>
+            
+            <h3>6.1 Payment Methods</h3>
+            <p>We accept various local payment methods including:</p>
+            <ul>
+                <li>KBZ Pay</li>
+                <li>Wave Money</li>
+                <li>CB Pay</li>
+                <li>AYA Pay</li>
+                <li>Other local payment services</li>
+            </ul>
+            
+            <h3>6.2 Transaction Security</h3>
+            <ul>
+                <li>All payment proofs are securely stored and encrypted</li>
+                <li>Manual verification by admin for every top-up request</li>
+                <li>Transaction records maintained for dispute resolution</li>
+                <li>Refund protection for rejected orders</li>
+            </ul>
+            
+            <h3>6.3 What We Don't Store</h3>
+            <ul>
+                <li>Bank account passwords or PINs</li>
+                <li>Credit/debit card numbers</li>
+                <li>Mobile banking credentials</li>
+                <li>Any direct financial access tokens</li>
+            </ul>
+            
+            <div class="highlight-box">
+                <p>
+                    <i class="fas fa-info-circle"></i>
+                    <span>Payment proof images are uploaded to secure third-party image hosting and only the URL is stored in our database. Original images are not retained on our servers.</span>
+                </p>
+            </div>
+            
+            <h3>6.4 Refund Policy</h3>
+            <ul>
+                <li>Rejected orders are automatically refunded to your balance</li>
+                <li>Refund processing is immediate upon rejection</li>
+                <li>Balance can be used for future purchases</li>
+                <li>Contact admin for withdrawal requests</li>
+            </ul>
+        </section>
+        
+        <!-- User Rights -->
+        <section class="section" id="user-rights">
+            <div class="section-icon">
+                <i class="fas fa-user-check"></i>
+            </div>
+            <h2>7. Your Rights</h2>
+            
+            <p>You have the following rights regarding your personal data:</p>
+            
+            <h3>7.1 Access & Information</h3>
+            <ul>
+                <li>View your profile information and order history</li>
+                <li>Check your current balance and transactions</li>
+                <li>Request a copy of your personal data</li>
+            </ul>
+            
+            <h3>7.2 Control</h3>
+            <ul>
+                <li>Update your profile information through Telegram</li>
+                <li>Request correction of inaccurate data</li>
+                <li>Request deletion of your account</li>
+            </ul>
+            
+            <h3>7.3 Communication Preferences</h3>
+            <ul>
+                <li>Receive order notifications (required for service)</li>
+                <li>Opt-out of promotional broadcasts</li>
+                <li>Block the bot to stop all communications</li>
+            </ul>
+            
+            <h3>7.4 Account Deletion</h3>
+            <p>To request account deletion:</p>
+            <ul>
+                <li>Contact the admin through Telegram @OPPER101</li>
+                <li>Ensure all pending orders are completed</li>
+                <li>Withdraw any remaining balance</li>
+                <li>Your data will be deleted within 30 days</li>
+            </ul>
+        </section>
+        
+        <!-- Bot Terms -->
+        <section class="section" id="bot-terms">
+            <div class="section-icon">
+                <i class="fas fa-robot"></i>
+            </div>
+            <h2>8. Bot Usage Terms</h2>
+            
+            <h3>8.1 Acceptable Use</h3>
+            <p>By using our Telegram bot, you agree to:</p>
+            <ul>
+                <li>Provide accurate information for orders</li>
+                <li>Not attempt to exploit bugs or vulnerabilities</li>
+                <li>Not use the service for illegal activities</li>
+                <li>Respect other users and admin staff</li>
+            </ul>
+            
+            <h3>8.2 Prohibited Activities</h3>
+            <ul>
+                <li>Attempting to hack or breach security systems</li>
+                <li>Submitting fake payment proofs</li>
+                <li>Creating multiple accounts to abuse promotions</li>
+                <li>Spamming or flooding the bot with requests</li>
+                <li>Sharing access with unauthorized users</li>
+            </ul>
+            
+            <h3>8.3 Consequences of Violations</h3>
+            <ul>
+                <li>Warning for minor violations</li>
+                <li>Temporary suspension for repeated violations</li>
+                <li>Permanent ban for serious violations</li>
+                <li>Loss of account balance for fraud attempts</li>
+            </ul>
+            
+            <div class="highlight-box danger">
+                <p>
+                    <i class="fas fa-gavel"></i>
+                    <span><strong>Zero Tolerance:</strong> Fraudulent payment proofs or hacking attempts will result in immediate permanent ban without warning.</span>
+                </p>
+            </div>
+        </section>
+        
+        <!-- Third Party Services -->
+        <section class="section" id="third-party">
+            <div class="section-icon">
+                <i class="fas fa-external-link-alt"></i>
+            </div>
+            <h2>9. Third-Party Services</h2>
+            
+            <p>We use the following third-party services to operate our platform:</p>
+            
+            <h3>9.1 Telegram</h3>
+            <ul>
+                <li>User authentication and identity verification</li>
+                <li>Messaging and notifications</li>
+                <li>WebApp hosting and integration</li>
+            </ul>
+            
+            <h3>9.2 Data Storage</h3>
+            <ul>
+                <li>JSONBin.io for database storage</li>
+                <li>ImgBB for image hosting</li>
+                <li>Vercel for website hosting</li>
+            </ul>
+            
+            <h3>9.3 Third-Party Privacy</h3>
+            <p>Each third-party service has its own privacy policy. We recommend reviewing:</p>
+            <ul>
+                <li>Telegram Privacy Policy</li>
+                <li>Respective service provider policies</li>
+            </ul>
+            
+            <p>We do not sell, trade, or share your personal data with third parties for marketing purposes.</p>
+        </section>
+        
+        <!-- Data Retention -->
+        <section class="section" id="retention">
+            <div class="section-icon">
+                <i class="fas fa-clock"></i>
+            </div>
+            <h2>10. Data Retention</h2>
+            
+            <p>We retain your data for the following periods:</p>
+            <ul>
+                <li><strong>Account Data:</strong> Until account deletion request</li>
+                <li><strong>Transaction History:</strong> 2 years for record keeping</li>
+                <li><strong>Payment Proofs:</strong> 6 months after transaction</li>
+                <li><strong>Activity Logs:</strong> 90 days for security</li>
+            </ul>
+            
+            <p>After the retention period, data is securely deleted or anonymized.</p>
+        </section>
+        
+        <!-- Children's Privacy -->
+        <section class="section" id="children">
+            <div class="section-icon">
+                <i class="fas fa-child"></i>
+            </div>
+            <h2>11. Children's Privacy</h2>
+            
+            <p>Our services are not intended for users under 13 years of age. We do not knowingly collect personal information from children. If you believe a child has provided us with personal data, please contact us immediately.</p>
+        </section>
+        
+        <!-- Changes to Policy -->
+        <section class="section" id="changes">
+            <div class="section-icon">
+                <i class="fas fa-sync-alt"></i>
+            </div>
+            <h2>12. Changes to This Policy</h2>
+            
+            <p>We may update this Privacy Policy from time to time. We will notify you of any changes by:</p>
+            <ul>
+                <li>Posting the new policy on this page</li>
+                <li>Updating the "Last Updated" date</li>
+                <li>Sending announcements through the bot for significant changes</li>
+            </ul>
+            
+            <p>Continued use of our services after changes constitutes acceptance of the updated policy.</p>
+        </section>
+        
+        <!-- Contact -->
+        <section class="section" id="contact">
+            <div class="section-icon">
+                <i class="fas fa-envelope"></i>
+            </div>
+            <h2>13. Contact Us</h2>
+            
+            <p>If you have questions about this Privacy Policy or need assistance, contact us through:</p>
+            
+            <div class="contact-card">
+                <i class="fab fa-telegram"></i>
+                <div class="info">
+                    <h4>Telegram Bot</h4>
+                    <p>@mafia_gameshopbot</p>
+                </div>
+            </div>
+            
+            <div class="contact-card">
+                <i class="fas fa-user-shield"></i>
+                <div class="info">
+                    <h4>Admin Support</h4>
+                    <p>@OPPER101</p>
+                </div>
+            </div>
+            
+            <div class="contact-card">
+                <i class="fas fa-globe"></i>
+                <div class="info">
+                    <h4>Website</h4>
+                    <p>mafiad9.vercel.app</p>
+                </div>
+            </div>
+            
+            <div class="highlight-box success">
+                <p>
+                    <i class="fas fa-headset"></i>
+                    <span>We aim to respond to all inquiries within 24 hours. For urgent matters, please contact the admin directly on Telegram.</span>
+                </p>
+            </div>
+        </section>
+        
+        <!-- Agreement -->
+        <section class="section" id="agreement">
+            <div class="section-icon">
+                <i class="fas fa-handshake"></i>
+            </div>
+            <h2>14. Acceptance of Terms</h2>
+            
+            <p>By using our Telegram bot and web services, you acknowledge that you have read, understood, and agree to be bound by this Privacy Policy. If you do not agree with this policy, please do not use our services.</p>
+            
+            <div class="highlight-box">
+                <p>
+                    <i class="fas fa-check-double"></i>
+                    <span><strong>Summary:</strong> We collect minimal necessary data, protect it with industry-standard security, use it only for service delivery, and never sell it to third parties. Your privacy and security are our top priorities.</span>
+                </p>
+            </div>
+        </section>
+        
+        <!-- Footer -->
+        <footer class="footer">
+            <p>© 2025 Mafia Game Shop. All rights reserved.</p>
+            <div class="footer-links">
+                <a href="https://t.me/mafia_gameshopbot"><i class="fab fa-telegram"></i> Telegram Bot</a>
+                <a href="https://t.me/OPPER101"><i class="fas fa-headset"></i> Support</a>
+                <a href="https://mafiad9.vercel.app"><i class="fas fa-home"></i> Home</a>
+            </div>
+        </footer>
+    </div>
+    
+    <!-- Scroll to Top Button -->
+    <div class="scroll-top" onclick="window.scrollTo({top: 0, behavior: 'smooth'})">
+        <i class="fas fa-arrow-up"></i>
+    </div>
+    
+    <script>
+        // Scroll to top button visibility
+        window.addEventListener('scroll', () => {
+            const scrollTop = document.querySelector('.scroll-top');
+            if (window.scrollY > 300) {
+                scrollTop.classList.add('visible');
+            } else {
+                scrollTop.classList.remove('visible');
+            }
+        });
+        
+        // Smooth scroll for navigation links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        });
+    </script>
+</body>
+</html>
