@@ -913,55 +913,75 @@ const AdminApp = {
     },
     
     async saveProduct() {
-        const categoryId = document.getElementById('product-category').value;
-        const name = document.getElementById('product-name').value.trim();
-        const price = parseFloat(document.getElementById('product-price').value);
-        const currency = document.getElementById('product-currency').value;
-        const discount = parseInt(document.getElementById('product-discount').value) || 0;
-        const deliveryTime = document.getElementById('product-delivery').value;
-        const iconInput = document.getElementById('product-icon');
+    const categoryId = document.getElementById('product-category').value;
+    const name = document.getElementById('product-name').value.trim();
+    const price = parseFloat(document.getElementById('product-price').value);
+    const currency = document.getElementById('product-currency').value;
+    const discount = parseInt(document.getElementById('product-discount').value) || 0;
+    const deliveryTime = document.getElementById('product-delivery').value;
+    const iconInput = document.getElementById('product-icon');
+    
+    if (!categoryId || !name || isNaN(price)) {
+        Utils.showToast('Please fill all required fields', 'warning');
+        return;
+    }
+    
+    Utils.showLoading('Saving...');
+    
+    try {
+        let icon = this.state.editingItem?.icon || '';
         
-        if (!categoryId || !name || isNaN(price)) {
-            Utils.showToast('Please fill all required fields', 'warning');
+        // Upload icon to ImgBB if new file selected
+        if (iconInput.files[0]) {
+            console.log('📤 Uploading product icon to ImgBB...');
+            
+            const formData = new FormData();
+            formData.append('image', iconInput.files[0]);
+            
+            const IMGBB_API_KEY = 'd3b0e9fd43ff0eb762987129a2f21e9c';
+            
+            const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error?.message || 'Icon upload failed');
+            }
+            
+            console.log('✅ Product icon uploaded:', result.data.url);
+            icon = result.data.url;
+        }
+        
+        if (!icon && !this.state.editingItem) {
+            Utils.showToast('Please upload icon', 'warning');
+            Utils.hideLoading();
             return;
         }
         
-        Utils.showLoading('Saving...');
+        const data = { categoryId, name, price, currency, discount, deliveryTime, icon };
         
-        try {
-            let icon = this.state.editingItem?.icon || '';
-            
-            if (iconInput.files[0]) {
-                icon = await Utils.compressImage(iconInput.files[0], 200, 0.8);
-            }
-            
-            if (!icon && !this.state.editingItem) {
-                Utils.showToast('Please upload icon', 'warning');
-                Utils.hideLoading();
-                return;
-            }
-            
-            const data = { categoryId, name, price, currency, discount, deliveryTime, icon };
-            
-            if (this.state.editingItem) {
-                await Database.updateProduct(this.state.editingItem.id, data);
-                Utils.showToast('Product updated!', 'success');
-            } else {
-                await Database.createProduct(data);
-                Utils.showToast('Product created!', 'success');
-            }
-            
-            await this.loadAdminData();
-            this.renderProducts();
-            this.closeAddProduct();
-            
-        } catch (error) {
-            console.error('Save product error:', error);
-            Utils.showToast('Failed to save', 'error');
-        } finally {
-            Utils.hideLoading();
+        if (this.state.editingItem) {
+            await Database.updateProduct(this.state.editingItem.id, data);
+            Utils.showToast('Product updated!', 'success');
+        } else {
+            await Database.createProduct(data);
+            Utils.showToast('Product created!', 'success');
         }
-    },
+        
+        await this.loadAdminData();
+        this.renderProducts();
+        this.closeAddProduct();
+        
+    } catch (error) {
+        console.error('Save product error:', error);
+        Utils.showToast('Failed to save: ' + error.message, 'error');
+    } finally {
+        Utils.hideLoading();
+    }
+},
     
     async deleteProduct(productId) {
         if (!confirm('Delete this product?')) return;
