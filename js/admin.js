@@ -12,6 +12,7 @@ const AdminApp = {
         banners: { type1: [], type2: [] },
         payments: [],
         inputTables: [],
+        customEmojis: [],
         bannedUsers: [],
         settings: {},
         stats: {},
@@ -121,6 +122,7 @@ const AdminApp = {
             this.state.payments = results[7].status === 'fulfilled' ? results[7].value : [];
             this.state.inputTables = results[8].status === 'fulfilled' ? results[8].value : [];
             this.state.bannedUsers = results[9].status === 'fulfilled' ? results[9].value : [];
+            this.state.customEmojis = this.state.settings?.customEmojis || [];
             this.state.stats = results[10].status === 'fulfilled' ? results[10].value : {};
             
             // Update sidebar counts
@@ -219,6 +221,7 @@ const AdminApp = {
             case 'payments': this.renderPayments(); break;
             case 'announcements': this.renderAnnouncements(); break;
             case 'banned': this.renderBannedUsers(); break;
+            case 'emojis': this.renderCustomEmojis(); break;
             case 'settings': this.renderSettings(); break;
             case 'database': this.renderDatabaseIds(); break;
         }
@@ -1510,6 +1513,205 @@ async saveBanner() {
             Utils.hideLoading();
         }
     },
+
+     // ========== CUSTOM EMOJIS ==========
+
+renderCustomEmojis() {
+    const container = document.getElementById('admin-emojis-list');
+    if (!container) return;
+    
+    const emojis = this.state.settings?.customEmojis || [];
+    this.state.customEmojis = emojis;
+    
+    if (emojis.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state" style="grid-column: 1/-1;">
+                <i class="fas fa-smile-wink"></i>
+                <p>No custom emojis yet</p>
+                <small>Create your first custom emoji!</small>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = emojis.map(emoji => `
+        <div class="emoji-card">
+            <button class="delete-btn" onclick="AdminApp.deleteCustomEmoji('${emoji.id}')" title="Delete">
+                <i class="fas fa-trash"></i>
+            </button>
+            <div class="trigger-emoji">${emoji.trigger}</div>
+            <div class="emoji-arrow"><i class="fas fa-arrow-down"></i></div>
+            <img class="emoji-preview" src="${emoji.imageUrl}" alt="${emoji.name}">
+            <div class="emoji-name">${emoji.name || 'Unnamed'}</div>
+        </div>
+    `).join('');
+},
+
+showAddEmoji() {
+    document.getElementById('emoji-name').value = '';
+    document.getElementById('emoji-trigger').value = '';
+    document.getElementById('emoji-file').value = '';
+    document.getElementById('emoji-file-preview').innerHTML = '';
+    document.getElementById('emoji-file-preview').classList.add('hidden');
+    document.getElementById('add-emoji-modal').classList.remove('hidden');
+    this.loadEmojiPicker();
+},
+
+closeAddEmoji() {
+    document.getElementById('add-emoji-modal').classList.add('hidden');
+},
+
+loadEmojiPicker() {
+    const commonEmojis = [
+        '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃',
+        '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😙',
+        '😋', '😛', '😜', '🤪', '😝', '🤑', '🤗', '🤭', '🤫', '🤔',
+        '😐', '😑', '😶', '😏', '😒', '🙄', '😬', '😮', '🤯', '😳',
+        '🥵', '🥶', '😱', '😨', '😰', '😥', '😢', '😭', '😤', '😠',
+        '😡', '🤬', '😈', '👿', '💀', '☠️', '💩', '🤡', '👹', '👺',
+        '👻', '👽', '👾', '🤖', '❤️', '🧡', '💛', '💚', '💙', '💜',
+        '🖤', '🤍', '🤎', '💔', '💕', '💞', '💓', '💗', '💖', '💘',
+        '⭐', '🌟', '✨', '💫', '🔥', '💥', '💢', '💦', '💨', '💣',
+        '👋', '🤚', '🖐️', '✋', '🖖', '👌', '🤌', '🤏', '✌️', '🤞',
+        '🤟', '🤘', '🤙', '👈', '👉', '👆', '👇', '☝️', '👍', '👎',
+        '✊', '👊', '🤛', '🤜', '👏', '🙌', '👐', '🤲', '🤝', '🙏',
+        '🎮', '🕹️', '🎰', '🎲', '🧩', '🎯', '🎱', '🔮', '🧿', '🎪',
+        '💎', '💰', '💵', '💴', '💶', '💷', '💸', '💳', '🏆', '🥇',
+        '🎁', '🎀', '🎈', '🎉', '🎊', '🎄', '🎃', '⚡', '☀️', '🌙'
+    ];
+    
+    const grid = document.getElementById('emoji-picker-grid');
+    grid.innerHTML = commonEmojis.map(emoji => 
+        `<div class="emoji-item" onclick="AdminApp.selectTriggerEmoji('${emoji}')">${emoji}</div>`
+    ).join('');
+},
+
+selectTriggerEmoji(emoji) {
+    document.getElementById('emoji-trigger').value = emoji;
+    this.closeEmojiPicker();
+},
+
+showEmojiPicker() {
+    this.loadEmojiPicker();
+    document.getElementById('emoji-picker-modal').classList.remove('hidden');
+},
+
+closeEmojiPicker() {
+    document.getElementById('emoji-picker-modal').classList.add('hidden');
+},
+
+async saveCustomEmoji() {
+    const name = document.getElementById('emoji-name').value.trim();
+    const trigger = document.getElementById('emoji-trigger').value;
+    const fileInput = document.getElementById('emoji-file');
+    
+    if (!trigger) {
+        Utils.showToast('Please select a trigger emoji', 'warning');
+        return;
+    }
+    
+    if (!fileInput.files[0]) {
+        Utils.showToast('Please upload an image', 'warning');
+        return;
+    }
+    
+    // Check file type
+    const file = fileInput.files[0];
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+    
+    if (!allowedTypes.includes(file.type)) {
+        Utils.showToast('Only PNG, JPG, WEBP, GIF files are allowed', 'warning');
+        return;
+    }
+    
+    // Check if trigger already exists
+    const existing = (this.state.settings?.customEmojis || []).find(e => e.trigger === trigger);
+    if (existing) {
+        Utils.showToast('This trigger emoji is already used', 'warning');
+        return;
+    }
+    
+    Utils.showLoading('Uploading to ImgBB...');
+    
+    try {
+        // Upload to ImgBB API
+        const formData = new FormData();
+        formData.append('image', file);
+        
+        const IMGBB_API_KEY = 'd3b0e9fd43ff0eb762987129a2f21e9c';
+        
+        console.log('📤 Uploading emoji image to ImgBB...');
+        
+        const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error?.message || 'Image upload failed');
+        }
+        
+        console.log('✅ Image uploaded to ImgBB:', result.data.url);
+        
+        // Create emoji object
+        const newEmoji = {
+            id: 'emoji_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 9),
+            trigger: trigger,
+            imageUrl: result.data.url,
+            name: name,
+            type: 'image',
+            createdAt: new Date().toISOString()
+        };
+        
+        // Update settings with new emoji
+        const settings = this.state.settings || {};
+        if (!settings.customEmojis) {
+            settings.customEmojis = [];
+        }
+        settings.customEmojis.push(newEmoji);
+        
+        // Save to database
+        await Database.updateSettings(settings);
+        this.state.settings = settings;
+        this.state.customEmojis = settings.customEmojis;
+        
+        this.closeAddEmoji();
+        this.renderCustomEmojis();
+        Utils.showToast('Custom emoji created!', 'success');
+        
+    } catch (error) {
+        console.error('Save emoji error:', error);
+        Utils.showToast('Failed to create emoji: ' + error.message, 'error');
+    } finally {
+        Utils.hideLoading();
+    }
+},
+
+async deleteCustomEmoji(emojiId) {
+    if (!confirm('Delete this custom emoji?')) return;
+    
+    Utils.showLoading('Deleting...');
+    
+    try {
+        const settings = this.state.settings;
+        settings.customEmojis = (settings.customEmojis || []).filter(e => e.id !== emojiId);
+        
+        await Database.updateSettings(settings);
+        this.state.settings = settings;
+        this.state.customEmojis = settings.customEmojis;
+        
+        this.renderCustomEmojis();
+        Utils.showToast('Emoji deleted!', 'success');
+        
+    } catch (error) {
+        console.error('Delete emoji error:', error);
+        Utils.showToast('Failed to delete', 'error');
+    } finally {
+        Utils.hideLoading();
+    }
+},
     
     // ========== SETTINGS ==========
     renderSettings() {
@@ -1630,6 +1832,49 @@ function savePayment() { AdminApp.savePayment(); }
 function saveAnnouncement() { AdminApp.saveAnnouncement(); }
 function sendBroadcast() { AdminApp.sendBroadcast(); }
 function saveSettings() { AdminApp.saveSettings(); }
+
+// ========== CUSTOM EMOJI FUNCTIONS ==========
+
+function showAddEmoji() { AdminApp.showAddEmoji(); }
+function closeAddEmoji() { AdminApp.closeAddEmoji(); }
+function showEmojiPicker() { AdminApp.showEmojiPicker(); }
+function closeEmojiPicker() { AdminApp.closeEmojiPicker(); }
+function saveCustomEmoji() { AdminApp.saveCustomEmoji(); }
+
+function triggerEmojiUpload() {
+    document.getElementById('emoji-file').click();
+}
+
+function previewEmojiFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    // Check file type
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+        Utils.showToast('Only PNG, JPG, WEBP, GIF files are allowed', 'warning');
+        event.target.value = '';
+        return;
+    }
+    
+    const preview = document.getElementById('emoji-file-preview');
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        preview.innerHTML = `
+            <img src="${e.target.result}" alt="Preview">
+            <button class="remove-file" onclick="removeEmojiFile()">Remove</button>
+        `;
+        preview.classList.remove('hidden');
+    };
+    reader.readAsDataURL(file);
+}
+
+function removeEmojiFile() {
+    document.getElementById('emoji-file').value = '';
+    document.getElementById('emoji-file-preview').innerHTML = '';
+    document.getElementById('emoji-file-preview').classList.add('hidden');
+}
 
 function closeUserDetails() { AdminApp.closeUserDetails(); }
 
