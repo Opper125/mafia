@@ -1189,6 +1189,69 @@ const Database = {
             return false;
         }
     },
+
+     // ===== Custom Emoji Operations =====
+
+async getCustomEmojis() {
+    try {
+        const data = await this.read(this.bins.MAIN);
+        return data?.customEmojis || [];
+    } catch (error) {
+        console.error('Get custom emojis error:', error);
+        return [];
+    }
+},
+
+async createCustomEmoji(emojiData) {
+    try {
+        console.log('🎨 Creating custom emoji...');
+        
+        const data = await this.read(this.bins.MAIN, false);
+        
+        if (!data.customEmojis) {
+            data.customEmojis = [];
+        }
+        
+        const newEmoji = {
+            id: this.generateId(),
+            trigger: emojiData.trigger,
+            imageUrl: emojiData.imageUrl,
+            name: emojiData.name || '',
+            type: emojiData.type || 'image',
+            createdAt: new Date().toISOString()
+        };
+        
+        data.customEmojis.push(newEmoji);
+        await this.update(this.bins.MAIN, data);
+        
+        console.log('✅ Custom emoji created:', newEmoji.id);
+        return newEmoji;
+        
+    } catch (error) {
+        console.error('Create custom emoji error:', error);
+        throw error;
+    }
+},
+
+async deleteCustomEmoji(emojiId) {
+    try {
+        console.log('🗑️ Deleting custom emoji:', emojiId);
+        
+        const data = await this.read(this.bins.MAIN, false);
+        
+        if (data.customEmojis) {
+            data.customEmojis = data.customEmojis.filter(e => e.id !== emojiId);
+            await this.update(this.bins.MAIN, data);
+        }
+        
+        console.log('✅ Custom emoji deleted');
+        return true;
+        
+    } catch (error) {
+        console.error('Delete custom emoji error:', error);
+        throw error;
+    }
+},
     
     // ===== Banned Users Operations =====
     
