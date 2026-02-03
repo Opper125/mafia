@@ -2354,6 +2354,28 @@ body::before {
     color: var(--text-muted);
 }
 
+/* Custom Emoji Display */
+.custom-emoji {
+    display: inline-block;
+    width: 1.8em;
+    height: 1.8em;
+    vertical-align: middle;
+    object-fit: contain;
+    margin: 0 2px;
+    border-radius: 4px;
+}
+
+.category-name .custom-emoji,
+.product-name .custom-emoji {
+    width: 1.5em;
+    height: 1.5em;
+}
+
+.announcement-text .custom-emoji {
+    width: 1.2em;
+    height: 1.2em;
+}
+
 /* ===== Toast - Premium Notification ===== */
 .toast {
     position: fixed;
@@ -2564,26 +2586,4 @@ body::before {
     .modal {
         display: none !important;
     }
-}
-
-/* Custom Emoji Display */
-.custom-emoji {
-    display: inline-block;
-    width: 1.8em;
-    height: 1.8em;
-    vertical-align: middle;
-    object-fit: contain;
-    margin: 0 2px;
-    border-radius: 4px;
-}
-
-.category-name .custom-emoji,
-.product-name .custom-emoji {
-    width: 1.5em;
-    height: 1.5em;
-}
-
-.announcement-text .custom-emoji {
-    width: 1.2em;
-    height: 1.2em;
 }
