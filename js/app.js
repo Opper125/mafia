@@ -18,7 +18,7 @@ const App = {
         categoryBanners: [],
         orders: [],
         topups: [],
-        isLoading: false
+        isLoading: false,
         customEmojis: []
     },
     
