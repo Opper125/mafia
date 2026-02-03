@@ -19,6 +19,7 @@ const App = {
         orders: [],
         topups: [],
         isLoading: false
+        customEmojis: []
     },
     
     // Initialize app
@@ -157,6 +158,7 @@ const App = {
             ]);
             
             this.state.settings = settings;
+            this.state.customEmojis = settings?.customEmojis || [];
             this.state.categories = categories;
             this.state.banners = banners;
             this.state.payments = payments;
@@ -299,14 +301,14 @@ const App = {
     
     // Load announcement
     loadAnnouncement() {
-        const announcementText = document.getElementById('announcement-text');
-        
-        if (this.state.settings && this.state.settings.announcement) {
-            announcementText.textContent = this.state.settings.announcement;
-        } else {
-            announcementText.textContent = 'Welcome to Game Top-Up Shop! Best prices guaranteed!';
-        }
-    },
+    const announcementText = document.getElementById('announcement-text');
+    
+    if (this.state.settings && this.state.settings.announcement) {
+        announcementText.innerHTML = renderCustomEmojis(this.state.settings.announcement);
+    } else {
+        announcementText.textContent = 'Welcome to Game Top-Up Shop! Best prices guaranteed!';
+    }
+},
     
     // Load categories
     loadCategories() {
@@ -327,7 +329,7 @@ const App = {
                 ${category.flag ? `<span class="category-flag">${category.flag}</span>` : ''}
                 ${category.hasDiscount ? `<span class="category-discount"><i class="fas fa-percent"></i> Sale</span>` : ''}
                 <img src="${category.icon}" alt="${category.name}" class="category-icon">
-                <div class="category-name">${category.name}</div>
+                <div class="category-name">${renderCustomEmojis(category.name)}</div>
                 <div class="category-sold">
                     <i class="fas fa-fire"></i>
                     ${category.totalSold || 0} sold
@@ -402,7 +404,7 @@ const App = {
                      onclick="App.selectProduct('${product.id}')" data-product-id="${product.id}">
                     ${product.discount > 0 ? `<span class="product-discount-badge">-${product.discount}%</span>` : ''}
                     <img src="${product.icon}" alt="${product.name}" class="product-icon">
-                    <div class="product-name">${product.name}</div>
+                    <div class="product-name">${renderCustomEmojis(product.name)}</div>
                     <div class="product-price">
                         ${product.discount > 0 ? `<span class="original">${Utils.formatCurrency(product.price, product.currency)}</span>` : ''}
                         <span class="current">${Utils.formatCurrency(product.discountedPrice || product.price, product.currency)}</span>
@@ -1253,6 +1255,28 @@ function showNotificationSettings() {
 function showSupport() {
     App.showSupport();
 }
+
+// ===== Custom Emoji Renderer =====
+
+function renderCustomEmojis(text) {
+    if (!text || !App.state.customEmojis || App.state.customEmojis.length === 0) {
+        return text;
+    }
+    
+    let result = text;
+    
+    App.state.customEmojis.forEach(emoji => {
+        // Escape special regex characters in trigger
+        const escapedTrigger = emoji.trigger.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(escapedTrigger, 'g');
+        const replacement = `<img class="custom-emoji" src="${emoji.imageUrl}" alt="${emoji.name || 'emoji'}">`;
+        result = result.replace(regex, replacement);
+    });
+    
+    return result;
+}
+
+window.renderCustomEmojis = renderCustomEmojis;
 
 // ===== Initialize App =====
 document.addEventListener('DOMContentLoaded', () => {
