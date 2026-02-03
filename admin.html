@@ -80,6 +80,11 @@
                     <i class="fas fa-ban"></i>
                     <span>Banned Users</span>
                 </a>
+                <!-- Custom Emojis -->
+                <a class="nav-link" onclick="showAdminPage('emojis')">
+                    <i class="fas fa-smile-wink"></i>
+                    <span>Custom Emojis</span>
+                </a>
                 <a class="nav-link" onclick="showAdminPage('settings')">
                     <i class="fas fa-cog"></i>
                     <span>Settings</span>
@@ -343,6 +348,81 @@
                     <!-- Banned users will be loaded here -->
                 </div>
             </div>
+
+            <!-- Custom Emojis Page -->
+<div id="admin-page-emojis" class="admin-page hidden">
+    <div class="page-header-bar">
+        <h1><i class="fas fa-smile-wink"></i> Custom Emojis</h1>
+        <button class="btn btn-primary" onclick="showAddEmoji()">
+            <i class="fas fa-plus"></i> Add Emoji
+        </button>
+    </div>
+    
+    <div class="info-box">
+        <i class="fas fa-info-circle"></i>
+        <p>Create custom emojis to use in product names, descriptions, and announcements. Assign a trigger emoji (like 😎) and it will be replaced with your custom image. Supports PNG, JPG, WEBP, GIF files.</p>
+    </div>
+    
+    <div class="emojis-grid" id="admin-emojis-list">
+    </div>
+</div>
+
+<!-- Add Emoji Modal -->
+<div id="add-emoji-modal" class="modal hidden">
+    <div class="modal-overlay" onclick="closeAddEmoji()"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-smile-wink"></i> Add Custom Emoji</h3>
+            <button class="close-btn" onclick="closeAddEmoji()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label>Emoji Name</label>
+                <input type="text" id="emoji-name" placeholder="e.g., Fire Diamond">
+            </div>
+            
+            <div class="form-group">
+                <label>Trigger Emoji <span class="required">*</span></label>
+                <input type="text" id="emoji-trigger" placeholder="Click to select emoji" readonly onclick="showEmojiPicker()">
+                <small>This emoji will be replaced with your custom image</small>
+            </div>
+            
+            <div class="form-group">
+                <label>Upload Image/GIF <span class="required">*</span></label>
+                <div class="upload-box" onclick="triggerEmojiUpload()">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <p>Click to upload</p>
+                    <small>PNG, JPG, WEBP, GIF supported (Max 32MB)</small>
+                </div>
+                <input type="file" id="emoji-file" accept=".png,.jpg,.jpeg,.gif,.webp,image/png,image/jpeg,image/gif,image/webp" hidden onchange="previewEmojiFile(event)">
+                <div id="emoji-file-preview" class="file-preview hidden"></div>
+            </div>
+            
+            <button class="btn btn-primary btn-full" onclick="saveCustomEmoji()">
+                <i class="fas fa-check"></i> Create Emoji
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Emoji Picker Modal -->
+<div id="emoji-picker-modal" class="modal hidden">
+    <div class="modal-overlay" onclick="closeEmojiPicker()"></div>
+    <div class="modal-content modal-sm">
+        <div class="modal-header">
+            <h3><i class="fas fa-smile"></i> Select Trigger Emoji</h3>
+            <button class="close-btn" onclick="closeEmojiPicker()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="emoji-picker-grid" id="emoji-picker-grid">
+            </div>
+        </div>
+    </div>
+</div>
 
             <!-- Settings Page -->
             <div id="admin-page-settings" class="admin-page hidden">
