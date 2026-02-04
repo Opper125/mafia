@@ -1,66 +1,4 @@
 // ===== Main Application =====
-// ===== G2Bulk Reseller API Integration =====
-const G2BulkAPI = {
-    URL: 'https://api.g2bulk.com/api/v2',
-    KEY: '49d362166965e9d793931148a7aba193e0200fbd42c6b7fb1aff4047b4cc0cc2',
-    
-    // Make API request
-    async request(action, params = {}) {
-        try {
-            console.log(`📡 G2Bulk API: ${action}`, params);
-            
-            const response = await fetch(this.URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    key: this.KEY, 
-                    action, 
-                    ...params 
-                })
-            });
-            
-            const result = await response.json();
-            console.log(`✅ G2Bulk Response:`, result);
-            return result;
-            
-        } catch (error) {
-            console.error('❌ G2Bulk API Error:', error);
-            throw error;
-        }
-    },
-    
-    // Get all services
-    async getServices() {
-        return await this.request('services');
-    },
-    
-    // Get services by category
-    async getServicesByCategory(category) {
-        return await this.request('services', { category });
-    },
-    
-    // Place order for top-up
-    async placeOrder(serviceId, link, quantity = 1) {
-        return await this.request('add', {
-            service: serviceId,
-            link: link,
-            quantity: quantity
-        });
-    },
-    
-    // Check order status
-    async checkStatus(orderId) {
-        return await this.request('status', { order: orderId });
-    },
-    
-    // Check API balance
-    async getBalance() {
-        return await this.request('balance');
-    }
-};
-
-// Make it globally available
-window.G2BulkAPI = G2BulkAPI;
 
 const App = {
     // App state
@@ -83,167 +21,7 @@ const App = {
         isLoading: false,
         customEmojis: []
     },
-
-    // ===== Auto Top-Up System =====
-
-const AutoTopUp = {
-    // Check and process approved orders
-    async processApprovedOrders() {
-        try {
-            if (!App.state.user) return;
-            
-            console.log('🔄 Checking for approved orders to process...');
-            
-            // Get user's orders
-            const orders = await Database.getOrdersByUser(App.state.user.telegramId);
-            
-            for (const order of orders) {
-                // Check if order is approved but not yet processed via API
-                if (order.status === 'approved' && !order.apiProcessed) {
-                    await this.processOrder(order);
-                }
-            }
-            
-        } catch (error) {
-            console.error('Auto top-up check error:', error);
-        }
-    },
     
-    // Process a single order
-    async processOrder(order) {
-        try {
-            console.log('🎮 Processing order:', order.orderId);
-            
-            // Get product details
-            const product = await Database.getProductById(order.productId);
-            
-            if (!product) {
-                console.log('⚠️ Product not found for order:', order.orderId);
-                return;
-            }
-            
-            // Check if product has API service ID
-            if (!product.serviceId) {
-                console.log('ℹ️ No service ID for product, manual processing required');
-                return;
-            }
-            
-            // Build link from input values (Player ID | Zone ID or just Player ID)
-            let link = '';
-            const inputValues = order.inputValues || {};
-            
-            // Common input field names
-            const playerIdKeys = ['Player ID', 'PlayerID', 'player id', 'User ID', 'UserID', 'Game ID', 'GameID', 'ID'];
-            const zoneIdKeys = ['Zone ID', 'ZoneID', 'zone id', 'Server ID', 'ServerID', 'Server'];
-            
-            let playerId = '';
-            let zoneId = '';
-            
-            // Find player ID
-            for (const key of playerIdKeys) {
-                if (inputValues[key]) {
-                    playerId = inputValues[key];
-                    break;
-                }
-            }
-            
-            // Find zone ID (optional, for Mobile Legends)
-            for (const key of zoneIdKeys) {
-                if (inputValues[key]) {
-                    zoneId = inputValues[key];
-                    break;
-                }
-            }
-            
-            // If no specific key found, use first input value
-            if (!playerId) {
-                const values = Object.values(inputValues);
-                if (values.length > 0) playerId = values[0];
-                if (values.length > 1) zoneId = values[1];
-            }
-            
-            // Build link format: PlayerID|ZoneID or just PlayerID
-            if (playerId) {
-                link = zoneId ? `${playerId}|${zoneId}` : playerId;
-            }
-            
-            if (!link) {
-                console.log('⚠️ No player ID found in order inputs');
-                return;
-            }
-            
-            console.log(`📤 Sending to G2Bulk API: Service ${product.serviceId}, Link: ${link}`);
-            
-            // Call G2Bulk API
-            const apiResult = await G2BulkAPI.placeOrder(product.serviceId, link, 1);
-            
-            if (apiResult && apiResult.order) {
-                console.log('✅ G2Bulk order placed:', apiResult.order);
-                
-                // Update order with API info
-                await this.markOrderProcessed(order.id, apiResult.order);
-                
-                // Notify user via Telegram (optional)
-                try {
-                    await TelegramBot.sendMessage(
-                        order.telegramId,
-                        `🎮 Your order #${order.orderId} is being processed!\n\n` +
-                        `Product: ${order.productName}\n` +
-                        `Status: Top-up in progress\n` +
-                        `API Order: #${apiResult.order}\n\n` +
-                        `Please wait 1-5 minutes for delivery.`
-                    );
-                } catch (e) {
-                    console.log('Could not send notification');
-                }
-                
-            } else if (apiResult && apiResult.error) {
-                console.error('❌ G2Bulk error:', apiResult.error);
-            }
-            
-        } catch (error) {
-            console.error('Process order error:', error);
-        }
-    },
-    
-    // Mark order as processed
-    async markOrderProcessed(orderId, apiOrderId) {
-        try {
-            const data = await Database.read(Database.bins.ORDERS, false);
-            const orders = data?.orders || [];
-            
-            const index = orders.findIndex(o => o.id === orderId);
-            if (index !== -1) {
-                orders[index].apiProcessed = true;
-                orders[index].apiOrderId = apiOrderId;
-                orders[index].apiProcessedAt = new Date().toISOString();
-                
-                await Database.update(Database.bins.ORDERS, { orders });
-                console.log('✅ Order marked as API processed');
-            }
-            
-        } catch (error) {
-            console.error('Mark order processed error:', error);
-        }
-    },
-    
-    // Start auto-check interval
-    startAutoCheck() {
-        // Check every 30 seconds
-        setInterval(() => {
-            this.processApprovedOrders();
-        }, 30000);
-        
-        // Also check immediately
-        this.processApprovedOrders();
-        
-        console.log('🚀 Auto Top-Up system started');
-    }
-};
-
-// Make it globally available
-window.AutoTopUp = AutoTopUp;
-
     // Initialize app
     async init() {
         try {
@@ -1501,6 +1279,151 @@ function renderCustomEmojis(text) {
 }
 
 window.renderCustomEmojis = renderCustomEmojis;
+
+
+// ===== Initialize App =====
+// ===== G2Bulk Reseller API Integration =====
+const G2BulkAPI = {
+    URL: 'https://api.g2bulk.com/api/v2',
+    KEY: '49d362166965e9d793931148a7aba193e0200fbd42c6b7fb1aff4047b4cc0cc2',
+    
+    async request(action, params = {}) {
+        try {
+            console.log('📡 G2Bulk API:', action, params);
+            
+            const response = await fetch(this.URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: this.KEY, action, ...params })
+            });
+            
+            return await response.json();
+        } catch (error) {
+            console.error('❌ G2Bulk API Error:', error);
+            throw error;
+        }
+    },
+    
+    async getServices() {
+        return await this.request('services');
+    },
+    
+    async placeOrder(serviceId, link, quantity = 1) {
+        return await this.request('add', {
+            service: serviceId,
+            link: link,
+            quantity: quantity
+        });
+    },
+    
+    async checkStatus(orderId) {
+        return await this.request('status', { order: orderId });
+    },
+    
+    async getBalance() {
+        return await this.request('balance');
+    }
+};
+
+window.G2BulkAPI = G2BulkAPI;
+
+// ===== Auto Top-Up System =====
+const AutoTopUp = {
+    async processApprovedOrders() {
+        try {
+            if (!App.state.user) return;
+            
+            const orders = await Database.getOrdersByUser(App.state.user.telegramId);
+            
+            for (const order of orders) {
+                if (order.status === 'approved' && !order.apiProcessed) {
+                    await this.processOrder(order);
+                }
+            }
+        } catch (error) {
+            console.error('Auto top-up error:', error);
+        }
+    },
+    
+    async processOrder(order) {
+        try {
+            console.log('🎮 Processing order:', order.orderId);
+            
+            const product = await Database.getProductById(order.productId);
+            
+            if (!product || !product.serviceId) {
+                console.log('ℹ️ No service ID, manual processing');
+                return;
+            }
+            
+            const inputValues = order.inputValues || {};
+            let playerId = '';
+            let zoneId = '';
+            
+            const playerKeys = ['Player ID', 'PlayerID', 'User ID', 'Game ID', 'ID'];
+            const zoneKeys = ['Zone ID', 'ZoneID', 'Server ID', 'Server'];
+            
+            for (const key of playerKeys) {
+                if (inputValues[key]) { playerId = inputValues[key]; break; }
+            }
+            
+            for (const key of zoneKeys) {
+                if (inputValues[key]) { zoneId = inputValues[key]; break; }
+            }
+            
+            if (!playerId) {
+                const values = Object.values(inputValues);
+                if (values.length > 0) playerId = values[0];
+                if (values.length > 1) zoneId = values[1];
+            }
+            
+            const link = zoneId ? `${playerId}|${zoneId}` : playerId;
+            
+            if (!link) {
+                console.log('⚠️ No player ID found');
+                return;
+            }
+            
+            console.log('📤 G2Bulk API: Service', product.serviceId, 'Link:', link);
+            
+            const apiResult = await G2BulkAPI.placeOrder(product.serviceId, link, 1);
+            
+            if (apiResult && apiResult.order) {
+                console.log('✅ G2Bulk order:', apiResult.order);
+                await this.markOrderProcessed(order.id, apiResult.order);
+            } else if (apiResult && apiResult.error) {
+                console.error('❌ G2Bulk error:', apiResult.error);
+            }
+        } catch (error) {
+            console.error('Process order error:', error);
+        }
+    },
+    
+    async markOrderProcessed(orderId, apiOrderId) {
+        try {
+            const data = await Database.read(Database.bins.ORDERS, false);
+            const orders = data?.orders || [];
+            
+            const index = orders.findIndex(o => o.id === orderId);
+            if (index !== -1) {
+                orders[index].apiProcessed = true;
+                orders[index].apiOrderId = apiOrderId;
+                orders[index].apiProcessedAt = new Date().toISOString();
+                await Database.update(Database.bins.ORDERS, { orders });
+            }
+        } catch (error) {
+            console.error('Mark order error:', error);
+        }
+    },
+    
+    startAutoCheck() {
+        setInterval(() => this.processApprovedOrders(), 30000);
+        this.processApprovedOrders();
+        console.log('🚀 Auto Top-Up started');
+    }
+};
+
+window.AutoTopUp = AutoTopUp;
 
 // ===== Initialize App =====
 document.addEventListener('DOMContentLoaded', () => {
