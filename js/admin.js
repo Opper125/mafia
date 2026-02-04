@@ -883,6 +883,7 @@ const AdminApp = {
         document.getElementById('product-currency').value = 'MMK';
         document.getElementById('product-discount').value = '';
         document.getElementById('product-delivery').value = 'instant';
+        document.getElementById('product-service-id').value = '';
         document.getElementById('product-icon').value = '';
         document.getElementById('product-icon-preview').innerHTML = '';
         document.getElementById('product-icon-preview').classList.add('hidden');
@@ -901,6 +902,7 @@ const AdminApp = {
         document.getElementById('product-currency').value = product.currency;
         document.getElementById('product-discount').value = product.discount || '';
         document.getElementById('product-delivery').value = product.deliveryTime;
+        document.getElementById('product-service-id').value = product.serviceId || '';
         
         if (product.icon) {
             document.getElementById('product-icon-preview').innerHTML = `<img src="${product.icon}" alt="Icon">`;
@@ -922,6 +924,7 @@ const AdminApp = {
     const currency = document.getElementById('product-currency').value;
     const discount = parseInt(document.getElementById('product-discount').value) || 0;
     const deliveryTime = document.getElementById('product-delivery').value;
+    const serviceId = document.getElementById('product-service-id').value;
     const iconInput = document.getElementById('product-icon');
     
     if (!categoryId || !name || isNaN(price)) {
@@ -964,7 +967,7 @@ const AdminApp = {
             return;
         }
         
-        const data = { categoryId, name, price, currency, discount, deliveryTime, icon };
+        const data = { categoryId, name, price, currency, discount, deliveryTime, serviceId: serviceId ? parseInt(serviceId) : null, icon };
         
         if (this.state.editingItem) {
             await Database.updateProduct(this.state.editingItem.id, data);
