@@ -1307,6 +1307,10 @@ const G2BulkAPI = {
     async getServices() {
         return await this.request('services');
     },
+
+     async getServicesByCategory(category) {
+         return await this.request('services', { category });
+    },
     
     async placeOrder(serviceId, link, quantity = 1) {
         return await this.request('add', {
