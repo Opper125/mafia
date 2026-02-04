@@ -1,4 +1,66 @@
 // ===== Main Application =====
+// ===== G2Bulk Reseller API Integration =====
+const G2BulkAPI = {
+    URL: 'https://api.g2bulk.com/api/v2',
+    KEY: '49d362166965e9d793931148a7aba193e0200fbd42c6b7fb1aff4047b4cc0cc2',
+    
+    // Make API request
+    async request(action, params = {}) {
+        try {
+            console.log(`📡 G2Bulk API: ${action}`, params);
+            
+            const response = await fetch(this.URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    key: this.KEY, 
+                    action, 
+                    ...params 
+                })
+            });
+            
+            const result = await response.json();
+            console.log(`✅ G2Bulk Response:`, result);
+            return result;
+            
+        } catch (error) {
+            console.error('❌ G2Bulk API Error:', error);
+            throw error;
+        }
+    },
+    
+    // Get all services
+    async getServices() {
+        return await this.request('services');
+    },
+    
+    // Get services by category
+    async getServicesByCategory(category) {
+        return await this.request('services', { category });
+    },
+    
+    // Place order for top-up
+    async placeOrder(serviceId, link, quantity = 1) {
+        return await this.request('add', {
+            service: serviceId,
+            link: link,
+            quantity: quantity
+        });
+    },
+    
+    // Check order status
+    async checkStatus(orderId) {
+        return await this.request('status', { order: orderId });
+    },
+    
+    // Check API balance
+    async getBalance() {
+        return await this.request('balance');
+    }
+};
+
+// Make it globally available
+window.G2BulkAPI = G2BulkAPI;
 
 const App = {
     // App state
