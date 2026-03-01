@@ -26,7 +26,21 @@ const CONFIG = {
         PAYMENTS: '697f241b43b1c97be95cfcdb',    // Payment methods
         INPUT_TABLES: '697f241b43b1c97be95cfcdd', // Input tables
         IMAGES: '697f241dd0ea881f4098683a',        // Image storage (base64)
-        BANNED: '697f241c43b1c97be95cfce0'         // Banned users
+        BANNED: '697f241c43b1c97be95cfce0',        // Banned users
+        G2BULK_CONFIG: 'G2BULK_CONFIG_BIN_ID',     // G2Bulk API configuration
+        G2BULK_PRODUCTS: 'G2BULK_PRODUCTS_BIN_ID', // G2Bulk products mapping
+        GAME_TOPUPS: 'GAME_TOPUPS_BIN_ID'          // In-game topup orders
+    },
+    
+    // G2Bulk API Configuration
+    G2BULK: {
+        ENABLED: true,                             // Enable G2Bulk integration
+        API_KEY: '49d362166965e9d793931148a7aba193e0200fbd42c6b7fb1aff4047b4cc0cc2',           // Your G2Bulk API key
+        API_BASE_URL: 'https://api.g2bulk.com',    // G2Bulk API endpoint
+        WEBHOOK_SECRET: 'YOUR_WEBHOOK_SECRET',     // Webhook secret for verification
+        AUTO_VERIFY: true,                         // Auto-verify topups
+        RETRY_ATTEMPTS: 3,                         // Retry failed topups
+        RETRY_DELAY: 5000                          // Delay between retries (ms)
     },
     
     // App Settings
@@ -192,6 +206,66 @@ const SCHEMAS = {
         //     reason: string,
         //     bannedAt: string,
         //     bannedBy: string
+        // }
+    },
+    
+    G2BULK_CONFIG: {
+        apiKey: '49d362166965e9d793931148a7aba193e0200fbd42c6b7fb1aff4047b4cc0cc2',
+        webhookSecret: 'YOUR_WEBHOOK_SECRET',
+        autoVerify: true,
+        retryAttempts: 3,
+        retryDelay: 5000,
+        lastSyncedAt: new Date().toISOString(),
+        apiBalance: 0,
+        apiBalanceUpdatedAt: new Date().toISOString(),
+        syncLogs: []
+        // Each log: { timestamp, action, status, message, details }
+    },
+    
+    G2BULK_PRODUCTS: {
+        products: [],
+        lastUpdated: new Date().toISOString()
+        // Each product: { 
+        //     id: string,
+        //     categoryId: string, 
+        //     gameId: string (from g2bulk),
+        //     serviceId: string (from g2bulk),
+        //     name: string,
+        //     price: number,
+        //     g2bulkPrice: number,
+        //     margin: number,
+        //     enabled: boolean,
+        //     deliveryTime: string
+        // }
+    },
+    
+    GAME_TOPUPS: {
+        topups: [],
+        // Each topup: {
+        //     id: string,
+        //     orderId: string,
+        //     userId: string,
+        //     telegramId: string,
+        //     productId: string,
+        //     productName: string,
+        //     playerId: string,
+        //     playerName: string,
+        //     gameId: string,
+        //     serviceId: string,
+        //     amount: number,
+        //     apiCost: number,
+        //     apiProfit: number,
+        //     currency: string,
+        //     g2bulkOrderId: string,
+        //     status: string (pending/processing/completed/failed/refunded),
+        //     errorMessage: string,
+        //     apiResponse: object,
+        //     retryCount: number,
+        //     lastRetryAt: string,
+        //     completedAt: string,
+        //     refundedAt: string,
+        //     createdAt: string,
+        //     updatedAt: string
         // }
     }
 };
