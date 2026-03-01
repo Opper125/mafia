@@ -219,6 +219,7 @@ const AdminApp = {
             case 'banners': this.renderBanners(); break;
             case 'input-tables': this.renderInputTables(); break;
             case 'payments': this.renderPayments(); break;
+            case 'g2bulk': this.loadG2BulkPage(); break;
             case 'announcements': this.renderAnnouncements(); break;
             case 'banned': this.renderBannedUsers(); break;
             case 'emojis': this.renderCustomEmojis(); break;
@@ -1786,6 +1787,237 @@ async deleteCustomEmoji(emojiId) {
         document.getElementById('orders-bin-id').textContent = CONFIG.BINS.ORDERS || 'Not set';
         document.getElementById('settings-bin-id').textContent = CONFIG.BINS.MAIN || 'Not set';
         document.getElementById('images-bin-id').textContent = CONFIG.BINS.IMAGES || 'Not set';
+    },
+
+    // ========== G2BULK INTEGRATION ==========
+    
+    async loadG2BulkPage() {
+        try {
+            // Load G2Bulk config
+            const config = await Database.getG2BulkConfig();
+            document.getElementById('g2bulk-api-key').value = config.apiKey || '';
+            document.getElementById('g2bulk-webhook-secret').value = config.webhookSecret || '';
+            document.getElementById('g2bulk-auto-verify').checked = config.autoVerify !== false;
+            
+            // Update status
+            const balance = config.apiBalance || 0;
+            const lastSync = config.apiBalanceUpdatedAt || 'Never';
+            document.getElementById('g2bulk-balance').textContent = balance.toFixed(2);
+            document.getElementById('g2bulk-last-sync').textContent = new Date(lastSync).toLocaleString();
+            
+            // Load products
+            await this.renderG2BulkProducts();
+            
+            // Load topup orders
+            await this.renderG2BulkOrders();
+            
+            // Load sync logs
+            this.renderG2BulkLogs(config.syncLogs || []);
+            
+        } catch (error) {
+            console.error('Load G2Bulk page error:', error);
+            Utils.showToast('Failed to load G2Bulk data', 'error');
+        }
+    },
+    
+    async saveG2BulkConfig() {
+        Utils.showLoading('Saving G2Bulk configuration...');
+        
+        try {
+            const config = {
+                apiKey: document.getElementById('g2bulk-api-key').value.trim(),
+                webhookSecret: document.getElementById('g2bulk-webhook-secret').value.trim(),
+                autoVerify: document.getElementById('g2bulk-auto-verify').checked
+            };
+            
+            if (!config.apiKey) {
+                throw new Error('API Key is required');
+            }
+            
+            // Get existing config to preserve other fields
+            const existingConfig = await Database.getG2BulkConfig();
+            const updated = {
+                ...existingConfig,
+                ...config
+            };
+            
+            await Database.updateG2BulkConfig(updated);
+            Utils.showToast('G2Bulk configuration saved!', 'success');
+            
+        } catch (error) {
+            console.error('Save G2Bulk config error:', error);
+            Utils.showToast('Failed: ' + error.message, 'error');
+        } finally {
+            Utils.hideLoading();
+        }
+    },
+    
+    async syncG2BulkBalance() {
+        Utils.showLoading('Syncing API balance...');
+        
+        try {
+            const balance = await G2Bulk.getBalance();
+            if (balance !== null) {
+                document.getElementById('g2bulk-balance').textContent = balance.toFixed(2);
+                document.getElementById('g2bulk-last-sync').textContent = new Date().toLocaleString();
+                Utils.showToast('Balance synced successfully!', 'success');
+            } else {
+                throw new Error('Failed to fetch balance');
+            }
+        } catch (error) {
+            console.error('Sync balance error:', error);
+            Utils.showToast('Failed to sync: ' + error.message, 'error');
+        } finally {
+            Utils.hideLoading();
+        }
+    },
+    
+    async renderG2BulkProducts() {
+        try {
+            const products = await Database.getG2BulkProducts();
+            const categories = await Database.getCategories();
+            
+            const list = document.getElementById('g2bulk-products-list');
+            
+            if (products.length === 0) {
+                list.innerHTML = '<div style="padding: 20px; text-align: center; color: rgba(255,255,255,0.5);">No products mapped yet</div>';
+                return;
+            }
+            
+            list.innerHTML = products.map(product => {
+                const category = categories.find(c => c.id === product.categoryId);
+                return `
+                    <div class="table-row">
+                        <div>${category?.name || 'Unknown'}</div>
+                        <div>${product.name}</div>
+                        <div>${product.gameId}</div>
+                        <div>${product.serviceId}</div>
+                        <div>${product.apiCost.toFixed(2)}</div>
+                        <div>${(product.price - product.apiCost).toFixed(2)}</div>
+                        <div>
+                            <button class="action-btn" onclick="deleteG2BulkProduct('${product.id}')" style="color: var(--danger);">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+        } catch (error) {
+            console.error('Render G2Bulk products error:', error);
+        }
+    },
+    
+    async renderG2BulkOrders() {
+        try {
+            const topups = await Database.getGameTopups();
+            const list = document.getElementById('g2bulk-orders-list');
+            
+            if (topups.length === 0) {
+                list.innerHTML = '<div style="padding: 20px; text-align: center; color: rgba(255,255,255,0.5);">No topup orders yet</div>';
+                return;
+            }
+            
+            // Sort by created date (newest first)
+            topups.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            
+            list.innerHTML = topups.slice(0, 50).map(topup => {
+                const statusColor = {
+                    'pending': '#f59e0b',
+                    'processing': '#3b82f6',
+                    'completed': '#10b981',
+                    'failed': '#ef4444',
+                    'refunded': '#8b5cf6'
+                }[topup.status] || '#6b7280';
+                
+                return `
+                    <div class="table-row">
+                        <div>${topup.playerName}</div>
+                        <div>${topup.productName}</div>
+                        <div>${topup.amount}</div>
+                        <div><span style="color: ${statusColor}; font-weight: bold;">${topup.status}</span></div>
+                        <div>${topup.g2bulkOrderId || '-'}</div>
+                        <div>${new Date(topup.createdAt).toLocaleString()}</div>
+                        <div>
+                            ${topup.status === 'failed' ? `<button class="action-btn" onclick="retryG2BulkTopup('${topup.id}')"><i class="fas fa-redo"></i> Retry</button>` : '-'}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+        } catch (error) {
+            console.error('Render G2Bulk orders error:', error);
+        }
+    },
+    
+    renderG2BulkLogs(logs) {
+        const logsContainer = document.getElementById('g2bulk-sync-logs');
+        
+        if (logs.length === 0) {
+            logsContainer.innerHTML = '<p style="padding: 10px; color: rgba(255,255,255,0.5);">No sync logs yet</p>';
+            return;
+        }
+        
+        logsContainer.innerHTML = logs.map(log => `
+            <div style="padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 12px;">
+                <div style="color: ${log.status === 'success' ? '#10b981' : log.status === 'failed' ? '#ef4444' : '#f59e0b'};">
+                    <strong>${log.action}</strong> - ${log.status.toUpperCase()}
+                </div>
+                <div style="color: rgba(255,255,255,0.7); margin-top: 2px;">
+                    ${log.message}
+                </div>
+                <div style="color: rgba(255,255,255,0.5); margin-top: 2px; font-size: 11px;">
+                    ${new Date(log.timestamp).toLocaleString()}
+                </div>
+            </div>
+        `).join('');
+    },
+    
+    async deleteG2BulkProduct(productId) {
+        if (!confirm('Delete this product mapping?')) return;
+        
+        try {
+            const products = await Database.getG2BulkProducts();
+            const filtered = products.filter(p => p.id !== productId);
+            await Database.saveG2BulkProducts(filtered);
+            await this.renderG2BulkProducts();
+            Utils.showToast('Product deleted!', 'success');
+        } catch (error) {
+            console.error('Delete product error:', error);
+            Utils.showToast('Failed to delete', 'error');
+        }
+    },
+    
+    async retryG2BulkTopup(topupId) {
+        Utils.showLoading('Retrying topup...');
+        
+        try {
+            const result = await G2Bulk.retryTopup(topupId);
+            if (result.success) {
+                Utils.showToast('Topup retry submitted!', 'success');
+                await this.renderG2BulkOrders();
+            } else {
+                throw new Error(result.error);
+            }
+        } catch (error) {
+            console.error('Retry error:', error);
+            Utils.showToast('Failed: ' + error.message, 'error');
+        } finally {
+            Utils.hideLoading();
+        }
+    },
+    
+    showG2BulkProductModal() {
+        // TODO: Implement G2Bulk product modal
+        Utils.showToast('Coming soon: G2Bulk product mapping', 'info');
+    },
+    
+    closeG2BulkProductModal() {
+        // TODO: Close modal
+    },
+    
+    saveG2BulkProduct() {
+        // TODO: Save product mapping
     }
 };
 
@@ -1893,6 +2125,17 @@ function triggerBannerUpload() { document.getElementById('banner-image').click()
 function triggerPaymentIconUpload() { document.getElementById('payment-icon').click(); }
 function triggerLogoUpload() { document.getElementById('website-logo').click(); }
 function triggerBroadcastImageUpload() { document.getElementById('broadcast-image').click(); }
+
+// ===== G2BULK FUNCTIONS =====
+
+function saveG2BulkConfig() { AdminApp.saveG2BulkConfig(); }
+function syncG2BulkBalance() { AdminApp.syncG2BulkBalance(); }
+function showG2BulkProductModal() { AdminApp.showG2BulkProductModal(); }
+function closeG2BulkProductModal() { AdminApp.closeG2BulkProductModal(); }
+function saveG2BulkProduct() { AdminApp.saveG2BulkProduct(); }
+function deleteG2BulkProduct(productId) { AdminApp.deleteG2BulkProduct(productId); }
+function retryG2BulkTopup(topupId) { AdminApp.retryG2BulkTopup(topupId); }
+function loadG2BulkPage() { AdminApp.loadG2BulkPage(); }
 
 // ===== EVENT LISTENERS =====
 document.addEventListener('DOMContentLoaded', () => {
