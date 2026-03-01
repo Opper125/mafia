@@ -27,9 +27,9 @@ const CONFIG = {
         INPUT_TABLES: '697f241b43b1c97be95cfcdd', // Input tables
         IMAGES: '697f241dd0ea881f4098683a',        // Image storage (base64)
         BANNED: '697f241c43b1c97be95cfce0',        // Banned users
-        G2BULK_CONFIG: 'G2BULK_CONFIG_BIN_ID',     // G2Bulk API configuration
-        G2BULK_PRODUCTS: 'G2BULK_PRODUCTS_BIN_ID', // G2Bulk products mapping
-        GAME_TOPUPS: 'GAME_TOPUPS_BIN_ID'          // In-game topup orders
+        G2BULK_CONFIG: '69a49974d0ea881f40e562bf',     // G2Bulk API configuration
+        G2BULK_PRODUCTS: '69a49994d0ea881f40e562ed', // G2Bulk products mapping
+        GAME_TOPUPS: '69a499abae596e708f55c6e2'          // In-game topup orders
     },
     
     // G2Bulk API Configuration
