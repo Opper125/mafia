@@ -552,21 +552,6 @@ const App = {
         modalRemaining.textContent = Utils.formatCurrency(remaining, 'MMK');
         modalRemaining.style.color = remaining >= 0 ? 'var(--success)' : 'var(--danger)';
         
-        // Show in-game section for G2Bulk products
-        const ingameSection = document.getElementById('ingame-section');
-        const playerIdInput = document.getElementById('player-id');
-        const playerNameInput = document.getElementById('player-name');
-        
-        if (product.gameId && product.serviceId && CONFIG.G2BULK.ENABLED) {
-            ingameSection.style.display = 'block';
-            playerIdInput.value = '';
-            playerNameInput.value = '';
-            playerIdInput.required = true;
-        } else {
-            ingameSection.style.display = 'none';
-            playerIdInput.required = false;
-        }
-        
         modal.classList.remove('hidden');
     },
     
@@ -610,7 +595,10 @@ const App = {
         TelegramApp.hapticFeedback('impact', 'heavy');
         
         try {
-            // Create order first (before deducting balance)
+            // Deduct balance
+            await Database.updateUserBalance(this.state.user.telegramId, price, 'subtract');
+            
+            // Create order
             const order = await Database.createOrder({
                 userId: this.state.user.id,
                 telegramId: this.state.user.telegramId,
@@ -620,79 +608,21 @@ const App = {
                 categoryName: this.state.currentCategory.name,
                 amount: price,
                 currency: product.currency,
-                inputValues: this.state.inputValues,
-                status: 'pending'  // Start as pending
+                inputValues: this.state.inputValues
             });
             
-            // Check if product has G2Bulk integration (has gameId and serviceId)
-            const isG2BulkProduct = product.gameId && product.serviceId;
+            // Notify admin
+            await TelegramBot.notifyNewOrder(order, this.state.user);
             
-            if (isG2BulkProduct && CONFIG.G2BULK.ENABLED) {
-                // Get player ID and name from modal inputs
-                const playerId = document.getElementById('player-id').value?.trim();
-                const playerName = document.getElementById('player-name').value?.trim();
-                
-                if (!playerId) {
-                    Utils.showToast('Please enter your Player ID', 'error');
-                    // Revert order status
-                    await Database.deleteOrder(order.id);
-                    Utils.hideLoading();
-                    return;
-                }
-                
-                // Get product details for G2Bulk
-                const productData = {
-                    gameId: product.gameId,
-                    serviceId: product.serviceId,
-                    apiCost: product.apiCost || 0
-                };
-                
-                // Process through G2Bulk
-                const g2bulkResult = await G2Bulk.processOrder(
-                    order.id,
-                    productData,
-                    playerId,
-                    playerName || playerId
-                );
-                
-                if (g2bulkResult.success) {
-                    // Order was auto-approved and balance deducted in G2Bulk.processOrder
-                    this.state.user.balance -= price;
-                    this.state.orders.unshift(order);
-                    this.updateHeader();
-                    
-                    this.closeBuyModal();
-                    Utils.showToast('Order confirmed! Delivering to your account...', 'success');
-                    
-                    // Notify admin
-                    await TelegramBot.notifyNewOrder(order, this.state.user);
-                } else {
-                    // G2Bulk processing failed - delete order
-                    await Database.deleteOrder(order.id);
-                    Utils.showToast(`Failed to process order: ${g2bulkResult.error}`, 'error');
-                    Utils.hideLoading();
-                    return;
-                }
-            } else {
-                // Regular manual order (needs admin approval)
-                await Database.updateOrderStatus(order.id, 'pending', null);
-                
-                // Deduct balance immediately for manual orders too
-                await Database.updateUserBalance(this.state.user.telegramId, price, 'subtract');
-                
-                // Update local user state
-                this.state.user.balance -= price;
-                this.state.orders.unshift(order);
-                
-                this.updateHeader();
-                
-                // Close modal and show success
-                this.closeBuyModal();
-                Utils.showToast('Order placed! Awaiting admin approval...', 'success');
-                
-                // Notify admin
-                await TelegramBot.notifyNewOrder(order, this.state.user);
-            }
+            // Update local user state
+            this.state.user.balance -= price;
+            this.state.orders.unshift(order);
+            
+            this.updateHeader();
+            
+            // Close modal and show success
+            this.closeBuyModal();
+            Utils.showToast('Order placed successfully!', 'success');
             
             // Reset selection
             this.state.selectedProduct = null;
