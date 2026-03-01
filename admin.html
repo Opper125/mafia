@@ -68,10 +68,6 @@
                     <i class="fas fa-credit-card"></i>
                     <span>Payment Methods</span>
                 </a>
-                <a class="nav-link" onclick="showAdminPage('g2bulk')">
-                    <i class="fas fa-gamepad"></i>
-                    <span>G2Bulk Integration</span>
-                </a>
                 <a class="nav-link" onclick="showAdminPage('announcements')">
                     <i class="fas fa-bullhorn"></i>
                     <span>Announcements</span>
@@ -298,106 +294,6 @@
                 </div>
                 <div class="payments-list" id="admin-payments-list">
                     <!-- Payment methods will be loaded here -->
-                </div>
-            </div>
-
-            <!-- G2Bulk Integration Page -->
-            <div id="admin-page-g2bulk" class="admin-page hidden">
-                <div class="page-header">
-                    <h1><i class="fas fa-gamepad"></i> G2Bulk Integration</h1>
-                </div>
-                <div class="g2bulk-container">
-                    <!-- G2Bulk Configuration -->
-                    <div class="section">
-                        <h2>API Configuration</h2>
-                        <div class="form-group">
-                            <label>API Key</label>
-                            <input type="password" id="g2bulk-api-key" placeholder="Enter G2Bulk API Key">
-                            <small>Get your API key from https://g2bulk.com/account/api</small>
-                        </div>
-                        <div class="form-group">
-                            <label>Webhook Secret</label>
-                            <input type="text" id="g2bulk-webhook-secret" placeholder="Enter webhook secret">
-                        </div>
-                        <div class="checkbox-group">
-                            <input type="checkbox" id="g2bulk-auto-verify" checked>
-                            <label>Auto-verify topups</label>
-                        </div>
-                        <button class="save-btn" onclick="saveG2BulkConfig()">
-                            <i class="fas fa-save"></i> Save Configuration
-                        </button>
-                    </div>
-
-                    <!-- API Status & Balance -->
-                    <div class="section">
-                        <h2>API Status</h2>
-                        <div class="status-card">
-                            <div class="status-item">
-                                <span>Connection Status:</span>
-                                <span id="g2bulk-status" class="status-badge">Unknown</span>
-                            </div>
-                            <div class="status-item">
-                                <span>API Balance:</span>
-                                <span id="g2bulk-balance">Loading...</span>
-                            </div>
-                            <div class="status-item">
-                                <span>Last Synced:</span>
-                                <span id="g2bulk-last-sync">Never</span>
-                            </div>
-                        </div>
-                        <button class="action-btn" onclick="syncG2BulkBalance()">
-                            <i class="fas fa-sync"></i> Sync Balance
-                        </button>
-                    </div>
-
-                    <!-- Game Products Mapping -->
-                    <div class="section">
-                        <h2>Game Products Mapping</h2>
-                        <div class="products-table" id="g2bulk-products-table">
-                            <div class="table-header">
-                                <div>Category</div>
-                                <div>Product Name</div>
-                                <div>Game ID</div>
-                                <div>Service ID</div>
-                                <div>API Cost</div>
-                                <div>Margin</div>
-                                <div>Actions</div>
-                            </div>
-                            <div id="g2bulk-products-list">
-                                <!-- Products will be loaded here -->
-                            </div>
-                        </div>
-                        <button class="add-btn" onclick="showG2BulkProductModal()">
-                            <i class="fas fa-plus"></i> Add Game Product
-                        </button>
-                    </div>
-
-                    <!-- Topup Orders -->
-                    <div class="section">
-                        <h2>Game Topup Orders</h2>
-                        <div class="orders-table" id="g2bulk-orders-table">
-                            <div class="table-header">
-                                <div>Player</div>
-                                <div>Product</div>
-                                <div>Amount</div>
-                                <div>Status</div>
-                                <div>G2Bulk ID</div>
-                                <div>Created</div>
-                                <div>Actions</div>
-                            </div>
-                            <div id="g2bulk-orders-list">
-                                <!-- Orders will be loaded here -->
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Sync Logs -->
-                    <div class="section">
-                        <h2>Sync Logs</h2>
-                        <div id="g2bulk-sync-logs" style="max-height: 300px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px;">
-                            <!-- Logs will be loaded here -->
-                        </div>
-                    </div>
                 </div>
             </div>
 
@@ -888,7 +784,6 @@
     <script src="js/config.js"></script>
     <script src="js/utils.js"></script>
     <script src="js/database.js"></script>
-    <script src="js/g2bulk.js"></script>
     <script src="js/telegram.js"></script>
     <script src="js/admin.js"></script>
     <!-- Cookie Consent -->
