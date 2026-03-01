@@ -152,9 +152,9 @@ async function main() {
     console.log('');
     console.log('   BINS: {');
     console.log('       // ... existing bins ...');
-    console.log(`       G2BULK_CONFIG: '${results.G2BULK_CONFIG || 'YOUR_BIN_ID'}',`);
-    console.log(`       G2BULK_PRODUCTS: '${results.G2BULK_PRODUCTS || 'YOUR_BIN_ID'}',`);
-    console.log(`       GAME_TOPUPS: '${results.GAME_TOPUPS || 'YOUR_BIN_ID'}'`);
+    console.log(`       G2BULK_CONFIG: '${results.G2BULK_CONFIG || '69a49974d0ea881f40e562bf'}',`);
+    console.log(`       G2BULK_PRODUCTS: '${results.G2BULK_PRODUCTS || '69a49994d0ea881f40e562ed'}',`);
+    console.log(`       GAME_TOPUPS: '${results.GAME_TOPUPS || '69a499abae596e708f55c6e2'}'`);
     console.log('   }');
     console.log('');
     console.log('5. Save the file and reload your admin panel');
