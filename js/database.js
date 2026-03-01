@@ -1380,6 +1380,110 @@ async deleteCustomEmoji(emojiId) {
         }
     },
     
+    // ===== G2Bulk Operations =====
+    
+    async getG2BulkConfig() {
+        try {
+            const data = await this.read(this.bins.G2BULK_CONFIG);
+            return data || SCHEMAS.G2BULK_CONFIG;
+        } catch (error) {
+            console.error('Get G2Bulk config error:', error);
+            return SCHEMAS.G2BULK_CONFIG;
+        }
+    },
+    
+    async updateG2BulkConfig(config) {
+        try {
+            return await this.update(this.bins.G2BULK_CONFIG, config);
+        } catch (error) {
+            console.error('Update G2Bulk config error:', error);
+            throw error;
+        }
+    },
+    
+    async getG2BulkProducts() {
+        try {
+            const data = await this.read(this.bins.G2BULK_PRODUCTS);
+            return data?.products || [];
+        } catch (error) {
+            console.error('Get G2Bulk products error:', error);
+            return [];
+        }
+    },
+    
+    async saveG2BulkProducts(products) {
+        try {
+            const data = {
+                products: products,
+                lastUpdated: new Date().toISOString()
+            };
+            return await this.update(this.bins.G2BULK_PRODUCTS, data);
+        } catch (error) {
+            console.error('Save G2Bulk products error:', error);
+            throw error;
+        }
+    },
+    
+    async getGameTopups() {
+        try {
+            const data = await this.read(this.bins.GAME_TOPUPS);
+            return data?.topups || [];
+        } catch (error) {
+            console.error('Get game topups error:', error);
+            return [];
+        }
+    },
+    
+    async getGameTopup(gameTopupId) {
+        try {
+            const topups = await this.getGameTopups();
+            return topups.find(t => t.id === gameTopupId) || null;
+        } catch (error) {
+            console.error('Get game topup error:', error);
+            return null;
+        }
+    },
+    
+    async saveGameTopup(gameTopup) {
+        try {
+            const data = await this.read(this.bins.GAME_TOPUPS);
+            if (!data.topups) data.topups = [];
+            
+            data.topups.unshift(gameTopup);
+            return await this.update(this.bins.GAME_TOPUPS, data);
+        } catch (error) {
+            console.error('Save game topup error:', error);
+            throw error;
+        }
+    },
+    
+    async updateGameTopup(gameTopup) {
+        try {
+            const data = await this.read(this.bins.GAME_TOPUPS);
+            if (!data.topups) data.topups = [];
+            
+            const index = data.topups.findIndex(t => t.id === gameTopup.id);
+            if (index !== -1) {
+                data.topups[index] = gameTopup;
+            }
+            
+            return await this.update(this.bins.GAME_TOPUPS, data);
+        } catch (error) {
+            console.error('Update game topup error:', error);
+            throw error;
+        }
+    },
+    
+    async getGameTopupsByUser(telegramId) {
+        try {
+            const topups = await this.getGameTopups();
+            return topups.filter(t => String(t.telegramId) === String(telegramId));
+        } catch (error) {
+            console.error('Get game topups by user error:', error);
+            return [];
+        }
+    },
+    
     // ===== Utility Functions =====
     
     generateId() {
