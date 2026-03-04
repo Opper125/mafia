@@ -56,7 +56,6 @@
                     <i class="fas fa-box"></i>
                     <span>Products</span>
                 </a>
-                <!-- NEW: G2Bulk Services -->
                 <a class="nav-link" onclick="showAdminPage('g2bulk')">
                     <i class="fas fa-cloud"></i>
                     <span>G2Bulk Services</span>
@@ -111,7 +110,6 @@
                     </div>
                 </div>
 
-                <!-- G2Bulk API Balance - NEW -->
                 <div class="api-balance-bar" id="api-balance-bar">
                     <div class="api-balance-icon"><i class="fas fa-cloud"></i></div>
                     <div class="api-balance-info">
@@ -152,7 +150,6 @@
                             <span class="stat-label">Pending Orders</span>
                         </div>
                     </div>
-                    <!-- NEW stats -->
                     <div class="stat-card cyan">
                         <div class="stat-icon"><i class="fas fa-bolt"></i></div>
                         <div class="stat-info">
@@ -207,7 +204,7 @@
                 </div>
             </div>
 
-            <!-- Orders Page (UPDATED) -->
+            <!-- Orders Page -->
             <div id="admin-page-orders" class="admin-page hidden">
                 <div class="page-header">
                     <h1><i class="fas fa-shopping-cart"></i> Orders Management</h1>
@@ -248,7 +245,7 @@
                 <div class="categories-list" id="admin-categories-list"></div>
             </div>
 
-            <!-- Products Page (UPDATED) -->
+            <!-- Products Page -->
             <div id="admin-page-products" class="admin-page hidden">
                 <div class="page-header">
                     <h1><i class="fas fa-box"></i> Products</h1>
@@ -264,7 +261,7 @@
                 <div class="products-list" id="admin-products-list"></div>
             </div>
 
-            <!-- NEW: G2Bulk Services Page -->
+            <!-- G2Bulk Services Page -->
             <div id="admin-page-g2bulk" class="admin-page hidden">
                 <div class="page-header">
                     <h1><i class="fas fa-cloud"></i> G2Bulk Services</h1>
@@ -274,8 +271,6 @@
                         </button>
                     </div>
                 </div>
-
-                <!-- API Balance Display -->
                 <div class="g2bulk-balance-card" id="g2bulk-balance-card">
                     <div class="balance-header">
                         <i class="fas fa-wallet"></i>
@@ -283,8 +278,6 @@
                     </div>
                     <div class="balance-amount" id="g2bulk-balance-display">Loading...</div>
                 </div>
-
-                <!-- Search & Filter -->
                 <div class="g2bulk-search-bar">
                     <div class="search-input-group">
                         <i class="fas fa-search"></i>
@@ -294,11 +287,7 @@
                         <option value="all">All Categories</option>
                     </select>
                 </div>
-
-                <!-- Services Count -->
                 <div class="services-count" id="g2bulk-services-count">0 services found</div>
-
-                <!-- Services List -->
                 <div class="g2bulk-services-list" id="g2bulk-services-list">
                     <div class="empty-state">
                         <i class="fas fa-cloud-download-alt"></i>
@@ -330,120 +319,20 @@
                 </div>
             </div>
 
-                <!-- Add Input Table Modal (REDESIGNED - Simple JSON Checker) -->
-    <div id="add-input-table-modal" class="modal hidden">
-        <div class="modal-overlay" onclick="closeAddInputTable()"></div>
-        <div class="modal-content large">
-            <div class="modal-header">
-                <h3><i class="fas fa-plus"></i> <span id="input-table-modal-title">Add Input Table</span></h3>
-                <button class="close-btn" onclick="closeAddInputTable()">
-                    <i class="fas fa-times"></i>
-                </button>
+            <!-- ★★★ Input Tables Page (NEW - was missing) ★★★ -->
+            <div id="admin-page-input-tables" class="admin-page hidden">
+                <div class="page-header">
+                    <h1><i class="fas fa-keyboard"></i> Input Tables</h1>
+                    <button class="add-btn" onclick="showAddInputTable()">
+                        <i class="fas fa-plus"></i> Add Input Table
+                    </button>
+                </div>
+                <div class="info-box">
+                    <i class="fas fa-info-circle"></i>
+                    <p>Input tables define the fields users must fill in before purchasing (e.g., Player ID, Zone ID). Enable Game ID Checker to auto-verify player accounts.</p>
+                </div>
+                <div class="input-tables-list" id="admin-input-tables-list"></div>
             </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label>Select Category <span class="required">*</span></label>
-                    <select id="input-table-category">
-                        <option value="">Select Category</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Input Name <span class="required">*</span></label>
-                    <input type="text" id="input-table-name" placeholder="e.g., Player ID, User ID, UID">
-                </div>
-                <div class="form-group">
-                    <label>Placeholder Text <span class="required">*</span></label>
-                    <input type="text" id="input-table-placeholder" placeholder="e.g., Enter your Player ID here">
-                </div>
-
-                <!-- Game ID Checker - SIMPLIFIED -->
-                <div class="form-section-header">
-                    <h4><i class="fas fa-search"></i> Game ID Checker</h4>
-                    <small>Auto verify player ID before purchase</small>
-                </div>
-
-                <div class="form-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="checker-enabled" onchange="toggleCheckerConfig()">
-                        <span>Enable Game ID Checker</span>
-                    </label>
-                </div>
-
-                <div id="checker-config-section" class="checker-config hidden">
-                    <!-- Quick Presets -->
-                    <div class="form-group">
-                        <label><i class="fas fa-gamepad"></i> Game Presets</label>
-                        <select id="checker-preset" onchange="AdminApp.loadCheckerPreset()">
-                            <option value="">-- Custom (Paste JSON) --</option>
-                            <option value="ml">📱 Mobile Legends (userId + zoneId)</option>
-                            <option value="ff">🔥 Free Fire (userId)</option>
-                            <option value="pubg">🎮 PUBG Mobile (userId)</option>
-                            <option value="genshin">⭐ Genshin Impact (userId + server)</option>
-                            <option value="hok">👑 Honor of Kings (userId)</option>
-                            <option value="codm">🔫 Call of Duty Mobile (userId)</option>
-                            <option value="aov">⚔️ Arena of Valor (userId)</option>
-                            <option value="lol">🏆 League of Legends (userId)</option>
-                        </select>
-                        <small>Select a game to auto-fill the checker config, then enter your RapidAPI key</small>
-                    </div>
-
-                    <!-- RapidAPI Key (shown when preset selected) -->
-                    <div class="form-group" id="rapidapi-key-group">
-                        <label><i class="fas fa-key"></i> RapidAPI Key</label>
-                        <input type="text" id="checker-rapidapi-key" placeholder="Paste your RapidAPI key here">
-                        <small>Get your key from <a href="https://rapidapi.com/okebagus426/api/check-id-game1" target="_blank" style="color:var(--primary);">RapidAPI - Check ID Game</a></small>
-                    </div>
-
-                    <!-- JSON Code -->
-                    <div class="form-group">
-                        <label><i class="fas fa-code"></i> Checker JSON Code</label>
-                        <textarea id="checker-json-code" rows="14" placeholder='{
-  "url": "https://check-id-game1.p.rapidapi.com/ml",
-  "method": "POST",
-  "headers": {
-    "Content-Type": "application/json",
-    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",
-    "x-rapidapi-key": "YOUR_KEY"
-  },
-  "body": {
-    "userId": "{{value}}",
-    "zoneId": "{{Zone ID}}"
-  },
-  "response": {
-    "valid": "success",
-    "nickname": "data.username",
-    "country": "data.country_code",
-    "avatar": "data.avatar",
-    "level": "data.level"
-  },
-  "errorMessage": "Player not found"
-}' class="code-textarea"></textarea>
-                        <small>
-                            <code>{{value}}</code> = this input field's value &nbsp;|&nbsp;
-                            <code>{{Field Name}}</code> = another input's value (e.g., <code>{{Zone ID}}</code>)
-                        </small>
-                    </div>
-
-                    <!-- Test Section -->
-                    <div class="form-group">
-                        <label><i class="fas fa-flask"></i> Test Checker</label>
-                        <div class="test-checker-group">
-                            <input type="text" id="checker-test-value" placeholder="Test ID (e.g., 123456789)">
-                            <input type="text" id="checker-test-value2" placeholder="Zone/Server ID (optional)">
-                            <button class="btn btn-sm btn-primary" onclick="AdminApp.testChecker()">
-                                <i class="fas fa-play"></i> Test
-                            </button>
-                        </div>
-                        <div id="checker-test-result" class="checker-test-result hidden"></div>
-                    </div>
-                </div>
-
-                <button class="save-btn" onclick="saveInputTable()">
-                    <i class="fas fa-save"></i> Save Input Table
-                </button>
-            </div>
-        </div>
-    </div>
 
             <!-- Payment Methods Page -->
             <div id="admin-page-payments" class="admin-page hidden">
@@ -614,6 +503,8 @@
         </main>
     </div>
 
+    <!-- ==================== MODALS ==================== -->
+
     <!-- Add Category Modal -->
     <div id="add-category-modal" class="modal hidden">
         <div class="modal-overlay" onclick="closeAddCategory()"></div>
@@ -668,7 +559,7 @@
         </div>
     </div>
 
-    <!-- Add Product Modal (UPDATED with G2Bulk) -->
+    <!-- Add Product Modal -->
     <div id="add-product-modal" class="modal hidden">
         <div class="modal-overlay" onclick="closeAddProduct()"></div>
         <div class="modal-content large">
@@ -690,7 +581,7 @@
                     <input type="text" id="product-name" placeholder="e.g., 60 UC">
                 </div>
                 <div class="form-group">
-                    <label>Price (Sell Price in your website) <span class="required">*</span></label>
+                    <label>Price (Sell Price) <span class="required">*</span></label>
                     <div class="price-input-group">
                         <input type="number" id="product-price" placeholder="Enter sell price">
                         <select id="product-currency">
@@ -723,16 +614,14 @@
                         <option value="24hours">24 Hours</option>
                     </select>
                 </div>
-
-                <!-- G2Bulk Service Link - NEW/UPDATED -->
                 <div class="form-section-header">
                     <h4><i class="fas fa-cloud"></i> G2Bulk API Configuration</h4>
                     <small>Link this product to a G2Bulk service for auto delivery</small>
                 </div>
                 <div class="form-group">
-                    <label>G2Bulk Service ID <span class="required">*</span></label>
+                    <label>G2Bulk Service ID</label>
                     <div class="service-id-input-group">
-                        <input type="number" id="product-service-id" placeholder="Enter Service ID from G2Bulk">
+                        <input type="number" id="product-service-id" placeholder="Enter Service ID">
                         <button type="button" class="btn btn-sm" onclick="AdminApp.lookupServiceId()">
                             <i class="fas fa-search"></i> Lookup
                         </button>
@@ -740,22 +629,19 @@
                             <i class="fas fa-list"></i> Browse
                         </button>
                     </div>
-                    <small>Get Service ID from G2Bulk Services page or enter manually</small>
                 </div>
                 <div id="service-lookup-result" class="service-lookup-result hidden"></div>
-
                 <div class="form-group">
-                    <label>G2Bulk Rate (Cost per unit in USD)</label>
-                    <input type="text" id="product-g2bulk-rate" placeholder="Auto-filled from lookup" readonly>
+                    <label>G2Bulk Rate (USD)</label>
+                    <input type="text" id="product-g2bulk-rate" placeholder="Auto-filled" readonly>
                 </div>
                 <div class="form-group">
-                    <label>G2Bulk Min/Max Quantity</label>
+                    <label>Min/Max Quantity</label>
                     <div class="min-max-group">
                         <input type="number" id="product-g2bulk-min" placeholder="Min" readonly>
                         <input type="number" id="product-g2bulk-max" placeholder="Max" readonly>
                     </div>
                 </div>
-
                 <button class="save-btn" onclick="saveProduct()">
                     <i class="fas fa-save"></i> Save Product
                 </button>
@@ -800,94 +686,161 @@
         </div>
     </div>
 
-    <!-- Add Input Table Modal (UPDATED with Game ID Checker) -->
+    <!-- ★★★ Add Input Table Modal (COMPLETELY REDESIGNED - JSON Config System) ★★★ -->
     <div id="add-input-table-modal" class="modal hidden">
         <div class="modal-overlay" onclick="closeAddInputTable()"></div>
         <div class="modal-content large">
             <div class="modal-header">
-                <h3><i class="fas fa-plus"></i> Add Input Table</h3>
+                <h3><i class="fas fa-keyboard"></i> <span id="input-table-modal-title">Add Input Table</span></h3>
                 <button class="close-btn" onclick="closeAddInputTable()">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
             <div class="modal-body">
+                <!-- Basic Info -->
                 <div class="form-group">
-                    <label>Select Category</label>
+                    <label>Select Category <span class="required">*</span></label>
                     <select id="input-table-category">
                         <option value="">Select Category</option>
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Input Name</label>
-                    <input type="text" id="input-table-name" placeholder="e.g., Player UID">
+                    <label>Input Name <span class="required">*</span></label>
+                    <input type="text" id="input-table-name" placeholder="e.g., Player ID, User ID, UID">
+                    <small>This name will be shown to users as the field label</small>
                 </div>
                 <div class="form-group">
-                    <label>Placeholder Text</label>
-                    <input type="text" id="input-table-placeholder" placeholder="e.g., Enter your UID here">
+                    <label>Placeholder Text <span class="required">*</span></label>
+                    <input type="text" id="input-table-placeholder" placeholder="e.g., Enter your Player ID here">
                 </div>
 
-                <!-- NEW: Game ID Checker Config -->
-                <div class="form-section-header">
-                    <h4><i class="fas fa-search"></i> Game ID Checker (Optional)</h4>
-                    <small>Enable ID verification before purchase</small>
+                <!-- Game ID Checker Section -->
+                <div class="form-section-divider">
+                    <div class="divider-line"></div>
+                    <span class="divider-text"><i class="fas fa-search"></i> Game ID Checker</span>
+                    <div class="divider-line"></div>
                 </div>
+
                 <div class="form-group">
-                    <label class="checkbox-label">
+                    <label class="checkbox-label toggle-style">
                         <input type="checkbox" id="checker-enabled" onchange="toggleCheckerConfig()">
-                        <span>Enable Game ID Checker</span>
+                        <span class="toggle-switch"></span>
+                        <span class="toggle-label">Enable Game ID Checker</span>
                     </label>
+                    <small>Auto verify player ID with game server before purchase</small>
                 </div>
-                <div id="checker-config-section" class="checker-config hidden">
+
+                <!-- JSON Config Section (shown when checker enabled) -->
+                <div id="checker-json-section" class="checker-json-section hidden">
+
+                    <!-- Sample Config Buttons -->
                     <div class="form-group">
-                        <label>API URL</label>
-                        <input type="text" id="checker-api-url" placeholder="https://api.example.com/check?id={{value}}">
-                        <small>Use <code>{{value}}</code> as placeholder for the input value</small>
-                    </div>
-                    <div class="form-group">
-                        <label>Method</label>
-                        <select id="checker-method">
-                            <option value="GET">GET</option>
-                            <option value="POST">POST</option>
-                        </select>
-                    </div>
-                    <div class="form-group" id="checker-headers-group">
-                        <label>Headers (JSON)</label>
-                        <textarea id="checker-headers" placeholder='{"Content-Type": "application/json"}'></textarea>
-                    </div>
-                    <div class="form-group" id="checker-body-group">
-                        <label>Body Template (JSON - POST only)</label>
-                        <textarea id="checker-body-template" placeholder='{"uid": "{{value}}"}'></textarea>
-                        <small>Use <code>{{value}}</code> for the user input</small>
-                    </div>
-                    <div class="form-group">
-                        <label>Response Name Path (dot notation)</label>
-                        <input type="text" id="checker-name-path" placeholder="e.g., data.nickname or result.name">
-                        <small>Path to player name in API response</small>
-                    </div>
-                    <div class="form-group">
-                        <label>Response Valid Path (dot notation, optional)</label>
-                        <input type="text" id="checker-valid-path" placeholder="e.g., data.is_valid or success">
-                        <small>Path to boolean valid check. Leave empty to use name existence.</small>
-                    </div>
-                    <div class="form-group">
-                        <label>Error Message</label>
-                        <input type="text" id="checker-error-msg" placeholder="Invalid Game ID. Please check and try again." value="Invalid Game ID. Please check and try again.">
-                    </div>
-                    <div class="form-group">
-                        <label>Test Checker</label>
-                        <div class="test-checker-group">
-                            <input type="text" id="checker-test-value" placeholder="Enter test ID">
-                            <button class="btn btn-sm" onclick="AdminApp.testChecker()">
-                                <i class="fas fa-play"></i> Test
+                        <label><i class="fas fa-gamepad"></i> Quick Templates</label>
+                        <div class="sample-config-grid">
+                            <button class="sample-btn" onclick="loadSampleConfig('rapidapi-mlbb')" title="Mobile Legends">
+                                <span class="sample-icon">📱</span>
+                                <span>MLBB</span>
+                            </button>
+                            <button class="sample-btn" onclick="loadSampleConfig('rapidapi-ff')" title="Free Fire">
+                                <span class="sample-icon">🔥</span>
+                                <span>Free Fire</span>
+                            </button>
+                            <button class="sample-btn" onclick="loadSampleConfig('rapidapi-genshin')" title="Genshin Impact">
+                                <span class="sample-icon">⭐</span>
+                                <span>Genshin</span>
+                            </button>
+                            <button class="sample-btn" onclick="loadSampleConfig('rapidapi-pubg')" title="PUBG Mobile">
+                                <span class="sample-icon">🎮</span>
+                                <span>PUBG</span>
+                            </button>
+                            <button class="sample-btn" onclick="loadSampleConfig('rapidapi-honkai')" title="Honkai Star Rail">
+                                <span class="sample-icon">🌟</span>
+                                <span>Honkai</span>
+                            </button>
+                            <button class="sample-btn" onclick="loadSampleConfig('custom-get')" title="Custom GET API">
+                                <span class="sample-icon">🔗</span>
+                                <span>GET API</span>
+                            </button>
+                            <button class="sample-btn" onclick="loadSampleConfig('custom-post')" title="Custom POST API">
+                                <span class="sample-icon">📡</span>
+                                <span>POST API</span>
                             </button>
                         </div>
-                        <div id="checker-test-result" class="checker-test-result hidden"></div>
+                        <small>Click a template to auto-fill, then replace <code>YOUR_RAPIDAPI_KEY_HERE</code> with your key from
+                            <a href="https://rapidapi.com/okebagus426/api/check-id-game1" target="_blank" style="color:var(--primary);font-weight:600;">RapidAPI</a>
+                        </small>
                     </div>
+
+                    <!-- JSON Config Textarea -->
+                    <div class="form-group">
+                        <label><i class="fas fa-code"></i> Checker JSON Config <span class="required">*</span></label>
+                        <textarea id="checker-json-config" 
+                                  class="code-textarea" 
+                                  rows="16" 
+                                  placeholder='{
+  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",
+  "method": "POST",
+  "headers": {
+    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",
+    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "game": "mobile-legends",
+    "userid": "{{value}}",
+    "zoneid": "{{Zone ID}}"
+  },
+  "responsePath": {
+    "valid": "success",
+    "nickname": "data.username",
+    "country": "data.country"
+  },
+  "errorMessage": "Game ID not found!"
+}'
+                                  oninput="onCheckerJsonInput()"></textarea>
+                        <div class="json-help-tags">
+                            <span class="help-tag"><code>{{value}}</code> = This input field's value</span>
+                            <span class="help-tag"><code>{{Field Name}}</code> = Another input's value</span>
+                        </div>
+                    </div>
+
+                    <!-- Parsed Preview -->
+                    <div id="checker-json-preview" class="checker-json-preview hidden"></div>
+
                 </div>
 
-                <button class="save-btn" onclick="saveInputTable()">
-                    <i class="fas fa-save"></i> Save Input Table
-                </button>
+                <!-- Test Section (shown when checker enabled) -->
+                <div id="checker-test-section" class="checker-test-section hidden">
+                    <div class="form-section-divider small">
+                        <div class="divider-line"></div>
+                        <span class="divider-text"><i class="fas fa-flask"></i> Test Checker</span>
+                        <div class="divider-line"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Test Game ID</label>
+                        <div class="test-checker-inputs">
+                            <input type="text" id="checker-test-value" placeholder="Enter test ID (e.g., 123456789)">
+                            <!-- Extra test inputs will be dynamically added here -->
+                            <div id="checker-test-extra-inputs" class="test-extra-inputs hidden"></div>
+                        </div>
+                        <button class="btn btn-primary btn-sm test-run-btn" onclick="testChecker()">
+                            <i class="fas fa-play"></i> Run Test
+                        </button>
+                    </div>
+
+                    <div id="checker-test-result" class="checker-test-result hidden"></div>
+                </div>
+
+                <!-- Save Button -->
+                <div class="modal-footer-actions">
+                    <button class="btn btn-secondary" onclick="closeAddInputTable()">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    <button class="save-btn" onclick="saveInputTable()">
+                        <i class="fas fa-save"></i> Save Input Table
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -1002,7 +955,7 @@
         </div>
     </div>
 
-    <!-- G2Bulk Service Browser Modal - NEW -->
+    <!-- G2Bulk Service Browser Modal -->
     <div id="g2bulk-browser-modal" class="modal hidden">
         <div class="modal-overlay" onclick="AdminApp.closeG2BulkBrowser()"></div>
         <div class="modal-content large">
@@ -1044,7 +997,7 @@
     <script src="js/admin.js"></script>
     <script src="js/cookie-consent.js"></script>
 
-    <!-- Privacy Policy Link in Sidebar -->
+    <!-- Privacy Policy Link -->
     <div class="sidebar-footer" style="padding:16px;border-top:1px solid rgba(255,255,255,0.1);margin-top:auto;">
         <a href="https://mafiad9.vercel.app/privacy-policy.html" target="_blank" style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.2);border-radius:12px;color:#a78bfa;text-decoration:none;font-size:14px;font-weight:500;transition:all 0.3s ease;">
             <i class="fas fa-shield-alt"></i>
