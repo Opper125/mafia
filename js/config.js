@@ -1,5 +1,4 @@
 // ===== Configuration File =====
-// Replace these values with your actual IDs from JSONBin.io
 
 const CONFIG = {
     // Telegram Bot Configuration
@@ -14,37 +13,47 @@ const CONFIG = {
     JSONBIN_API_KEY: '$2a$10$qIofQ05vovEVKj99fILB3OtPttEzZylUmfXXKwdomNVuP/LhlYSBS',
     JSONBIN_BASE_URL: 'https://api.jsonbin.io/v3/b',
     
-    // Database BIN IDs (Replace with your actual BIN IDs after creation)
+    // Database BIN IDs
     BINS: {
-        MAIN: '697f241743b1c97be95cfcd2',           // Main settings and config
-        USERS: '697f2418ae596e708f08d3f4',          // Users data
-        PRODUCTS: '697f241843b1c97be95cfcd5',    // Products data
-        CATEGORIES: '697f2419ae596e708f08d3f6',// Categories data
-        ORDERS: '697f2419d0ea881f40986834',        // Orders data
-        TOPUPS: '697f241aae596e708f08d3fa',        // Top-up requests
-        BANNERS: '697f241aae596e708f08d3fd',      // Banners data
-        PAYMENTS: '697f241b43b1c97be95cfcdb',    // Payment methods
-        INPUT_TABLES: '697f241b43b1c97be95cfcdd', // Input tables
-        IMAGES: '697f241dd0ea881f4098683a',        // Image storage (base64)
-        BANNED: '697f241c43b1c97be95cfce0'         // Banned users
+        MAIN: '697f241743b1c97be95cfcd2',
+        USERS: '697f2418ae596e708f08d3f4',
+        PRODUCTS: '697f241843b1c97be95cfcd5',
+        CATEGORIES: '697f2419ae596e708f08d3f6',
+        ORDERS: '697f2419d0ea881f40986834',
+        TOPUPS: '697f241aae596e708f08d3fa',
+        BANNERS: '697f241aae596e708f08d3fd',
+        PAYMENTS: '697f241b43b1c97be95cfcdb',
+        INPUT_TABLES: '697f241b43b1c97be95cfcdd',
+        IMAGES: '697f241dd0ea881f4098683a',
+        BANNED: '697f241c43b1c97be95cfce0'
+    },
+    
+    // G2Bulk Reseller API Configuration - NEW
+    G2BULK: {
+        API_URL: 'https://api.g2bulk.com/api/v2',
+        API_KEY: '49d362166965e9d793931148a7aba193e0200fbd42c6b7fb1aff4047b4cc0cc2',
+        ORDER_CHECK_INTERVAL: 30000,     // 30s - check processing orders
+        QUEUE_RETRY_INTERVAL: 60000,     // 60s - retry queued orders  
+        MAX_RETRY_ATTEMPTS: 50,          // Max retries for queued orders
+        SERVICES_CACHE_TTL: 300000,      // 5min - services cache
+        BALANCE_ERROR_KEYWORDS: ['insufficient', 'balance', 'not enough', 'funds', 'low balance'],
     },
     
     // App Settings
-    INTRO_DURATION: 5000,        // 5 seconds intro
-    BANNER_INTERVAL: 7000,       // 7 seconds banner slide
-    ANNOUNCEMENT_SPEED: 15,      // Announcement scroll speed in seconds
-    MAX_FAILED_PURCHASE_ATTEMPTS: 5,  // Auto-ban after 5 failed attempts
+    INTRO_DURATION: 5000,
+    BANNER_INTERVAL: 7000,
+    ANNOUNCEMENT_SPEED: 15,
+    MAX_FAILED_PURCHASE_ATTEMPTS: 5,
     
     // Default Settings
     DEFAULT_CURRENCY: 'MMK',
     DEFAULT_THEME: 'dark',
     
     // Version
-    VERSION: '1.0.0'
+    VERSION: '2.0.0'
 };
 
 // ===== JSONBin Initial Schema =====
-// Use these schemas when creating new bins in JSONBin.io
 
 const SCHEMAS = {
     MAIN: {
@@ -52,151 +61,79 @@ const SCHEMAS = {
         websiteLogo: '',
         announcement: 'Welcome to our Game Top-Up Shop! Best prices guaranteed!',
         theme: 'dark',
+        customEmojis: [],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
     },
     
     USERS: {
         users: []
-        // Each user: {
-        //     id: string,
-        //     telegramId: string,
-        //     username: string,
-        //     firstName: string,
-        //     lastName: string,
-        //     photoUrl: string,
-        //     isPremium: boolean,
-        //     balance: number,
-        //     totalOrders: number,
-        //     approvedOrders: number,
-        //     rejectedOrders: number,
-        //     totalSpent: number,
-        //     totalTopups: number,
-        //     failedPurchaseAttempts: number,
-        //     lastFailedAttempt: string,
-        //     joinedAt: string,
-        //     lastActive: string
-        // }
     },
     
     PRODUCTS: {
         products: []
-        // Each product: {
-        //     id: string,
-        //     categoryId: string,
-        //     name: string,
-        //     price: number,
-        //     currency: string,
-        //     discount: number,
-        //     discountedPrice: number,
-        //     icon: string (base64),
-        //     deliveryTime: string,
-        //     sold: number,
-        //     createdAt: string,
-        //     updatedAt: string
-        // }
+        // Each product now includes:
+        // serviceId: number (G2Bulk service ID)
+        // g2bulkRate: string (original G2Bulk rate in USD)
+        // g2bulkMin: number
+        // g2bulkMax: number
+        // g2bulkServiceName: string
     },
     
     CATEGORIES: {
         categories: []
-        // Each category: {
-        //     id: string,
-        //     name: string,
-        //     icon: string (base64),
-        //     flag: string,
-        //     hasDiscount: boolean,
-        //     totalSold: number,
-        //     createdAt: string,
-        //     updatedAt: string
-        // }
     },
     
     ORDERS: {
         orders: []
-        // Each order: {
-        //     id: string,
-        //     oderId: string (display),
-        //     userId: string,
-        //     telegramId: string,
-        //     productId: string,
-        //     productName: string,
-        //     categoryName: string,
-        //     amount: number,
-        //     currency: string,
-        //     inputValues: object,
-        //     status: string (pending/approved/rejected),
-        //     createdAt: string,
-        //     processedAt: string,
-        //     processedBy: string
-        // }
+        // Each order now includes:
+        // serviceId: number (G2Bulk service ID)
+        // link: string (game ID string sent to API)
+        // apiOrderId: number (G2Bulk order ID)
+        // apiStatus: string (Pending/Processing/In progress/Completed/Partial/Canceled)
+        // apiCharge: string (amount charged by G2Bulk)
+        // apiError: string (error message)
+        // autoProcessed: boolean
+        // retriedCount: number
+        // queuedAt: string (ISO date)
+        // completedAt: string (ISO date)
+        // refundedAt: string (ISO date)
+        // refundAmount: number
     },
     
     TOPUPS: {
         topups: []
-        // Each topup: {
-        //     id: string,
-        //     userId: string,
-        //     telegramId: string,
-        //     amount: number,
-        //     paymentMethod: string,
-        //     proofImage: string (base64),
-        //     status: string (pending/approved/rejected),
-        //     createdAt: string,
-        //     processedAt: string,
-        //     processedBy: string
-        // }
     },
     
     BANNERS: {
-        type1: [],  // Homepage banners
-        type2: []   // Category banners with descriptions
-        // Type1: { id, image (base64), createdAt }
-        // Type2: { id, categoryId, image (base64), description, createdAt }
+        type1: [],
+        type2: []
     },
     
     PAYMENTS: {
         payments: []
-        // Each payment: {
-        //     id: string,
-        //     name: string,
-        //     address: string,
-        //     accountName: string,
-        //     note: string,
-        //     icon: string (base64),
-        //     createdAt: string
-        // }
     },
     
     INPUT_TABLES: {
         inputTables: []
-        // Each input table: {
-        //     id: string,
-        //     categoryId: string,
-        //     name: string,
-        //     placeholder: string,
-        //     createdAt: string
+        // Each input table now includes:
+        // checkerEnabled: boolean
+        // checkerConfig: {
+        //     apiUrl: string,
+        //     method: 'GET' | 'POST',
+        //     headers: object,
+        //     bodyTemplate: string (JSON with {{value}} placeholder),
+        //     responseNamePath: string (dot notation path to player name),
+        //     responseValidPath: string (dot notation path to valid boolean),
+        //     errorMessage: string
         // }
     },
     
-    IMAGES: {
-        images: []
-        // Store base64 images with IDs for reference
-    },
+    IMAGES: { images: [] },
     
-    BANNED: {
-        bannedUsers: []
-        // Each banned user: {
-        //     id: string,
-        //     telegramId: string,
-        //     username: string,
-        //     reason: string,
-        //     bannedAt: string,
-        //     bannedBy: string
-        // }
-    }
+    BANNED: { bannedUsers: [] }
 };
 
-// Export for use in other files
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { CONFIG, SCHEMAS };
 }
