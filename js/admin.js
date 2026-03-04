@@ -1,4 +1,4 @@
-// ===== Admin Panel Application - G2Bulk Integrated =====
+// ===== Admin Panel Application - G2Bulk Integrated + Enhanced Game ID Checker =====
 
 const AdminApp = {
     state: {
@@ -19,7 +19,6 @@ const AdminApp = {
         currentBannerType: 'type1',
         ordersFilter: 'all',
         topupsFilter: 'all',
-        // NEW: G2Bulk state
         g2bulkServices: [],
         g2bulkServicesRaw: [],
         g2bulkBalance: null,
@@ -48,7 +47,6 @@ const AdminApp = {
             TelegramApp.ready();
             Utils.hideLoading();
             
-            // Load G2Bulk balance on start
             this.refreshApiBalance();
             
         } catch (error) {
@@ -175,14 +173,13 @@ const AdminApp = {
         }
     },
     
-    // ===== DASHBOARD (UPDATED) =====
+    // ===== DASHBOARD =====
     renderDashboard() {
         document.getElementById('stat-users').textContent = this.state.stats.totalUsers || this.state.users.length || 0;
         document.getElementById('stat-orders').textContent = this.state.stats.totalOrders || this.state.orders.length || 0;
         document.getElementById('stat-revenue').textContent = this.state.stats.totalRevenue || 0;
         document.getElementById('stat-pending').textContent = this.state.stats.pendingOrders || this.state.orders.filter(o => o.status === 'pending').length || 0;
         
-        // NEW stats
         const processingEl = document.getElementById('stat-processing');
         const queuedEl = document.getElementById('stat-queued');
         if (processingEl) processingEl.textContent = this.state.stats.processingOrders || this.state.orders.filter(o => o.status === 'processing').length || 0;
@@ -192,7 +189,6 @@ const AdminApp = {
         this.renderRecentTopups();
     },
     
-    // NEW: Refresh G2Bulk API Balance
     async refreshApiBalance() {
         try {
             const result = await G2BulkAPI.getBalance();
@@ -248,7 +244,7 @@ const AdminApp = {
         return `https://ui-avatars.com/api/?name=${id}&background=8b5cf6&color=fff&size=100`;
     },
     
-    // ===== USERS (unchanged) =====
+    // ===== USERS =====
     renderUsers() {
         const tbody = document.getElementById('users-table-body');
         if (!tbody) return;
@@ -315,7 +311,7 @@ const AdminApp = {
     
     closeUserDetails() { document.getElementById('user-details-modal').classList.add('hidden'); },
     
-    // ===== ORDERS (COMPLETELY UPDATED for G2Bulk) =====
+    // ===== ORDERS =====
     renderOrders() {
         const container = document.getElementById('admin-orders-list');
         if (!container) return;
@@ -405,7 +401,6 @@ const AdminApp = {
         finally { Utils.hideLoading(); }
     },
     
-    // NEW: Check single order API status from admin
     async checkOrderApiStatus(orderId) {
         const order = this.state.orders.find(o => o.id === orderId);
         if (!order || !order.apiOrderId) return;
@@ -437,7 +432,6 @@ const AdminApp = {
         finally { Utils.hideLoading(); }
     },
     
-    // NEW: Retry a queued order
     async retryQueuedOrder(orderId) {
         const order = this.state.orders.find(o => o.id === orderId);
         if (!order) return;
@@ -464,7 +458,6 @@ const AdminApp = {
         finally { Utils.hideLoading(); }
     },
     
-    // NEW: Cancel queued order and refund
     async cancelQueuedOrder(orderId) {
         if (!confirm('Cancel this order and refund the user?')) return;
         
@@ -482,7 +475,7 @@ const AdminApp = {
         finally { Utils.hideLoading(); }
     },
     
-    // ===== TOPUPS (unchanged) =====
+    // ===== TOPUPS =====
     renderTopups() {
         const container = document.getElementById('admin-topups-list');
         if (!container) return;
@@ -530,7 +523,7 @@ const AdminApp = {
         finally { Utils.hideLoading(); }
     },
     
-    // ===== CATEGORIES (unchanged) =====
+    // ===== CATEGORIES =====
     renderCategories() {
         const container = document.getElementById('admin-categories-list');
         if (!container) return;
@@ -589,7 +582,7 @@ const AdminApp = {
         finally { Utils.hideLoading(); }
     },
     
-    // ===== PRODUCTS (UPDATED with G2Bulk) =====
+    // ===== PRODUCTS =====
     renderProducts() {
         const container = document.getElementById('admin-products-list');
         const filterSelect = document.getElementById('filter-category');
@@ -666,7 +659,6 @@ const AdminApp = {
     
     closeAddProduct() { document.getElementById('add-product-modal').classList.add('hidden'); this.state.editingItem = null; },
     
-    // NEW: Lookup G2Bulk service by ID
     async lookupServiceId() {
         const serviceId = document.getElementById('product-service-id').value;
         if (!serviceId) { Utils.showToast('Enter a Service ID first', 'warning'); return; }
@@ -676,7 +668,6 @@ const AdminApp = {
         resultDiv.classList.remove('hidden');
         
         try {
-            // Fetch all services and find the one
             if (this.state.g2bulkServicesRaw.length === 0) {
                 const servicesResult = await G2BulkAPI.getServices();
                 this.state.g2bulkServicesRaw = servicesResult || [];
@@ -693,12 +684,10 @@ const AdminApp = {
                 </div>`;
                 resultDiv.className = 'service-lookup-result valid';
                 
-                // Auto-fill fields
                 document.getElementById('product-g2bulk-rate').value = service.rate;
                 document.getElementById('product-g2bulk-min').value = service.min;
                 document.getElementById('product-g2bulk-max').value = service.max;
                 
-                // Auto-fill product name if empty
                 if (!document.getElementById('product-name').value) {
                     document.getElementById('product-name').value = service.name;
                 }
@@ -712,7 +701,6 @@ const AdminApp = {
         }
     },
     
-    // NEW: Open G2Bulk service browser
     async openG2BulkServiceBrowser() {
         document.getElementById('g2bulk-browser-modal').classList.remove('hidden');
         
@@ -798,7 +786,6 @@ const AdminApp = {
             }
             if (!icon && !this.state.editingItem) { Utils.showToast('Please upload icon', 'warning'); Utils.hideLoading(); return; }
             
-            // Find service name from lookup
             let g2bulkServiceName = '';
             if (serviceId && this.state.g2bulkServicesRaw.length > 0) {
                 const svc = this.state.g2bulkServicesRaw.find(s => String(s.service) === String(serviceId));
@@ -830,7 +817,7 @@ const AdminApp = {
         finally { Utils.hideLoading(); }
     },
     
-    // ===== G2BULK SERVICES PAGE (NEW) =====
+    // ===== G2BULK SERVICES PAGE =====
     
     renderG2BulkPage() {
         this.refreshApiBalance();
@@ -845,11 +832,9 @@ const AdminApp = {
             const result = await G2BulkAPI.getServices();
             this.state.g2bulkServicesRaw = result || [];
             
-            // Extract unique categories
             const cats = [...new Set(this.state.g2bulkServicesRaw.map(s => s.category).filter(Boolean))];
             this.state.g2bulkCategories = cats.sort();
             
-            // Populate category filter
             const catFilter = document.getElementById('g2bulk-category-filter');
             if (catFilter) {
                 catFilter.innerHTML = '<option value="all">All Categories</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
@@ -896,7 +881,6 @@ const AdminApp = {
             return;
         }
         
-        // Show max 200 for performance
         const display = services.slice(0, 200);
         
         container.innerHTML = display.map(service => `
@@ -922,7 +906,6 @@ const AdminApp = {
         }
     },
     
-    // NEW: Quick add product from G2Bulk service
     quickAddProduct(serviceId) {
         const service = this.state.g2bulkServicesRaw.find(s => s.service === serviceId);
         if (!service) return;
@@ -935,7 +918,7 @@ const AdminApp = {
         document.getElementById('product-g2bulk-max').value = service.max;
     },
     
-    // ===== BANNERS (unchanged) =====
+    // ===== BANNERS =====
     renderBanners() { this.renderBannerType(this.state.currentBannerType); },
     
     renderBannerType(type) {
@@ -1001,20 +984,41 @@ const AdminApp = {
         finally { Utils.hideLoading(); }
     },
     
-    // ===== INPUT TABLES (UPDATED with Checker) =====
+    // ===== INPUT TABLES (COMPLETELY REWRITTEN - JSON Config System) =====
     renderInputTables() {
         const container = document.getElementById('admin-input-tables-list');
         if (!container) return;
         if (this.state.inputTables.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fas fa-keyboard"></i><p>No input tables yet</p></div>'; return; }
         container.innerHTML = this.state.inputTables.map(table => {
             const cat = this.state.categories.find(c => c.id === table.categoryId);
+            
+            // Parse checker config for display
+            let checkerInfo = '';
+            if (table.checkerEnabled && table.checkerConfig) {
+                let config = table.checkerConfig;
+                if (typeof config === 'string') {
+                    try { config = JSON.parse(config); } catch(e) {}
+                }
+                if (config && typeof config === 'object') {
+                    const url = config.url || config.apiUrl || '';
+                    const method = config.method || 'POST';
+                    checkerInfo = `
+                        <div class="checker-config-preview">
+                            <span class="checker-badge"><i class="fas fa-search"></i> ID Checker Enabled</span>
+                            <span class="checker-method-badge ${method.toLowerCase()}">${method}</span>
+                            <span class="checker-url-preview" title="${url}">${url.length > 40 ? url.substring(0, 40) + '...' : url}</span>
+                        </div>
+                    `;
+                }
+            }
+            
             return `<div class="input-table-card">
                 <div class="input-table-icon"><i class="fas fa-keyboard"></i></div>
                 <div class="input-table-info">
                     <h4>${table.name}</h4>
                     <p>${cat?.name || 'Unknown'}</p>
                     <p class="placeholder">"${table.placeholder}"</p>
-                    ${table.checkerEnabled ? '<span class="checker-badge"><i class="fas fa-search"></i> ID Checker Enabled</span>' : ''}
+                    ${checkerInfo}
                 </div>
                 <div class="input-table-actions">
                     <button class="action-btn edit" onclick="AdminApp.editInputTable('${table.id}')"><i class="fas fa-edit"></i></button>
@@ -1024,51 +1028,280 @@ const AdminApp = {
         }).join('');
     },
     
+    // COMPLETELY REWRITTEN: Show Add Input Table with JSON Config
     showAddInputTable() {
         this.state.editingItem = null;
+        document.getElementById('input-table-modal-title').textContent = 'Add Input Table';
         document.getElementById('input-table-category').innerHTML = '<option value="">Select Category</option>' + this.state.categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
         document.getElementById('input-table-name').value = '';
         document.getElementById('input-table-placeholder').value = '';
         document.getElementById('checker-enabled').checked = false;
-        document.getElementById('checker-config-section').classList.add('hidden');
-        document.getElementById('checker-api-url').value = '';
-        document.getElementById('checker-method').value = 'GET';
-        document.getElementById('checker-headers').value = '';
-        document.getElementById('checker-body-template').value = '';
-        document.getElementById('checker-name-path').value = '';
-        document.getElementById('checker-valid-path').value = '';
-        document.getElementById('checker-error-msg').value = 'Invalid Game ID. Please check and try again.';
+        document.getElementById('checker-json-section').classList.add('hidden');
+        document.getElementById('checker-json-config').value = '';
+        document.getElementById('checker-json-preview').classList.add('hidden');
+        document.getElementById('checker-json-preview').innerHTML = '';
+        document.getElementById('checker-test-section').classList.add('hidden');
+        document.getElementById('checker-test-value').value = '';
         document.getElementById('checker-test-result').classList.add('hidden');
         document.getElementById('add-input-table-modal').classList.remove('hidden');
     },
     
+    // COMPLETELY REWRITTEN: Edit Input Table with JSON Config
     editInputTable(tableId) {
         const table = this.state.inputTables.find(t => t.id === tableId);
         if (!table) return;
         this.state.editingItem = table;
+        document.getElementById('input-table-modal-title').textContent = 'Edit Input Table';
         document.getElementById('input-table-category').innerHTML = '<option value="">Select Category</option>' + this.state.categories.map(c => `<option value="${c.id}" ${c.id === table.categoryId ? 'selected' : ''}>${c.name}</option>`).join('');
         document.getElementById('input-table-name').value = table.name;
         document.getElementById('input-table-placeholder').value = table.placeholder;
         
-        // Load checker config
         document.getElementById('checker-enabled').checked = table.checkerEnabled || false;
-        document.getElementById('checker-config-section').classList.toggle('hidden', !table.checkerEnabled);
+        document.getElementById('checker-json-section').classList.toggle('hidden', !table.checkerEnabled);
         
         if (table.checkerConfig) {
-            document.getElementById('checker-api-url').value = table.checkerConfig.apiUrl || '';
-            document.getElementById('checker-method').value = table.checkerConfig.method || 'GET';
-            document.getElementById('checker-headers').value = table.checkerConfig.headers ? JSON.stringify(table.checkerConfig.headers, null, 2) : '';
-            document.getElementById('checker-body-template').value = table.checkerConfig.bodyTemplate || '';
-            document.getElementById('checker-name-path').value = table.checkerConfig.responseNamePath || '';
-            document.getElementById('checker-valid-path').value = table.checkerConfig.responseValidPath || '';
-            document.getElementById('checker-error-msg').value = table.checkerConfig.errorMessage || 'Invalid Game ID';
+            let configStr = '';
+            if (typeof table.checkerConfig === 'string') {
+                configStr = table.checkerConfig;
+            } else {
+                configStr = JSON.stringify(table.checkerConfig, null, 2);
+            }
+            document.getElementById('checker-json-config').value = configStr;
+            
+            // Show preview
+            this.previewCheckerConfig();
+        } else {
+            document.getElementById('checker-json-config').value = '';
         }
+        
+        document.getElementById('checker-test-section').classList.toggle('hidden', !table.checkerEnabled);
+        document.getElementById('checker-test-value').value = '';
+        document.getElementById('checker-test-result').classList.add('hidden');
         
         document.getElementById('add-input-table-modal').classList.remove('hidden');
     },
     
     closeAddInputTable() { document.getElementById('add-input-table-modal').classList.add('hidden'); this.state.editingItem = null; },
     
+    // NEW: Preview parsed JSON config
+    previewCheckerConfig() {
+        const jsonStr = document.getElementById('checker-json-config').value.trim();
+        const previewDiv = document.getElementById('checker-json-preview');
+        
+        if (!jsonStr) {
+            previewDiv.classList.add('hidden');
+            return;
+        }
+        
+        try {
+            const config = JSON.parse(jsonStr);
+            const url = config.url || config.apiUrl || 'N/A';
+            const method = (config.method || 'POST').toUpperCase();
+            const hasHeaders = config.headers && Object.keys(config.headers).length > 0;
+            const hasBody = !!config.body || !!config.bodyTemplate;
+            const rp = config.responsePath || config.response || {};
+            
+            // Extract required inputs from body
+            let requiredInputs = [];
+            if (config.body) {
+                const bodyStr = JSON.stringify(config.body);
+                const matches = bodyStr.match(/\{\{([^}]+)\}\}/g) || [];
+                requiredInputs = matches.map(m => m.replace(/\{\{|\}\}/g, ''));
+            }
+            
+            previewDiv.innerHTML = `
+                <div class="json-preview-card">
+                    <h4><i class="fas fa-check-circle" style="color: var(--success);"></i> Config Parsed Successfully</h4>
+                    <div class="preview-grid">
+                        <div class="preview-item">
+                            <span class="preview-label">URL</span>
+                            <span class="preview-value url">${url}</span>
+                        </div>
+                        <div class="preview-item">
+                            <span class="preview-label">Method</span>
+                            <span class="preview-value"><span class="method-badge ${method.toLowerCase()}">${method}</span></span>
+                        </div>
+                        <div class="preview-item">
+                            <span class="preview-label">Headers</span>
+                            <span class="preview-value">${hasHeaders ? Object.keys(config.headers).join(', ') : 'Default'}</span>
+                        </div>
+                        ${hasBody ? `<div class="preview-item">
+                            <span class="preview-label">Body</span>
+                            <span class="preview-value">✅ Configured</span>
+                        </div>` : ''}
+                        ${requiredInputs.length > 0 ? `<div class="preview-item">
+                            <span class="preview-label">Required Inputs</span>
+                            <span class="preview-value">${requiredInputs.map(r => `<span class="input-ref-tag">{{${r}}}</span>`).join(' ')}</span>
+                        </div>` : ''}
+                        <div class="preview-item">
+                            <span class="preview-label">Response Mapping</span>
+                            <span class="preview-value">
+                                ${rp.valid ? `Valid: <code>${rp.valid}</code>` : ''}
+                                ${rp.nickname ? ` | Nickname: <code>${rp.nickname}</code>` : ''}
+                                ${rp.country ? ` | Country: <code>${rp.country}</code>` : ''}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            previewDiv.classList.remove('hidden');
+            
+            // Show test section
+            document.getElementById('checker-test-section').classList.remove('hidden');
+            
+        } catch (e) {
+            previewDiv.innerHTML = `
+                <div class="json-preview-card error">
+                    <h4><i class="fas fa-exclamation-triangle" style="color: var(--danger);"></i> Invalid JSON</h4>
+                    <p class="error-text">${e.message}</p>
+                </div>
+            `;
+            previewDiv.classList.remove('hidden');
+            document.getElementById('checker-test-section').classList.add('hidden');
+        }
+    },
+    
+    // NEW: Load sample JSON configs
+    loadSampleConfig(type) {
+        const samples = {
+            'rapidapi-mlbb': `{
+  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",
+  "method": "POST",
+  "headers": {
+    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",
+    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "game": "mobile-legends",
+    "userid": "{{value}}",
+    "zoneid": "{{Zone ID}}"
+  },
+  "responsePath": {
+    "valid": "success",
+    "nickname": "data.username",
+    "country": "data.country"
+  },
+  "errorMessage": "Game ID not found! Please check your User ID and Zone ID."
+}`,
+            'rapidapi-ff': `{
+  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",
+  "method": "POST",
+  "headers": {
+    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",
+    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "game": "free-fire",
+    "userid": "{{value}}"
+  },
+  "responsePath": {
+    "valid": "success",
+    "nickname": "data.username",
+    "country": "data.country"
+  },
+  "errorMessage": "Free Fire ID not found! Please check and try again."
+}`,
+            'rapidapi-genshin': `{
+  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",
+  "method": "POST",
+  "headers": {
+    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",
+    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "game": "genshin-impact",
+    "userid": "{{value}}"
+  },
+  "responsePath": {
+    "valid": "success",
+    "nickname": "data.username",
+    "country": "data.country"
+  },
+  "errorMessage": "Genshin Impact UID not found!"
+}`,
+            'rapidapi-pubg': `{
+  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",
+  "method": "POST",
+  "headers": {
+    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",
+    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "game": "pubg-mobile",
+    "userid": "{{value}}"
+  },
+  "responsePath": {
+    "valid": "success",
+    "nickname": "data.username",
+    "country": "data.country"
+  },
+  "errorMessage": "PUBG Mobile ID not found!"
+}`,
+            'rapidapi-honkai': `{
+  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",
+  "method": "POST",
+  "headers": {
+    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",
+    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "game": "honkai-star-rail",
+    "userid": "{{value}}"
+  },
+  "responsePath": {
+    "valid": "success",
+    "nickname": "data.username",
+    "country": "data.country"
+  },
+  "errorMessage": "Honkai Star Rail UID not found!"
+}`,
+            'custom-get': `{
+  "url": "https://your-api.com/check?id={{value}}",
+  "method": "GET",
+  "headers": {
+    "Authorization": "Bearer YOUR_TOKEN"
+  },
+  "responsePath": {
+    "valid": "status",
+    "nickname": "data.name",
+    "country": "data.region"
+  },
+  "errorMessage": "ID not found!"
+}`,
+            'custom-post': `{
+  "url": "https://your-api.com/verify",
+  "method": "POST",
+  "headers": {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer YOUR_TOKEN"
+  },
+  "body": {
+    "user_id": "{{value}}",
+    "server_id": "{{Server ID}}"
+  },
+  "responsePath": {
+    "valid": "success",
+    "nickname": "result.player_name",
+    "country": "result.country_code"
+  },
+  "errorMessage": "Player not found!"
+}`
+        };
+        
+        const config = samples[type];
+        if (config) {
+            document.getElementById('checker-json-config').value = config;
+            this.previewCheckerConfig();
+            Utils.showToast('Sample config loaded! Remember to replace YOUR_RAPIDAPI_KEY_HERE', 'info');
+        }
+    },
+    
+    // COMPLETELY REWRITTEN: Save Input Table with JSON Config
     async saveInputTable() {
         const categoryId = document.getElementById('input-table-category').value;
         const name = document.getElementById('input-table-name').value.trim();
@@ -1079,24 +1312,20 @@ const AdminApp = {
         
         let checkerConfig = null;
         if (checkerEnabled) {
-            const apiUrl = document.getElementById('checker-api-url').value.trim();
-            if (!apiUrl) { Utils.showToast('Please enter API URL for checker', 'warning'); return; }
+            const jsonStr = document.getElementById('checker-json-config').value.trim();
+            if (!jsonStr) { Utils.showToast('Please enter checker JSON config', 'warning'); return; }
             
-            let headers = {};
             try {
-                const headersStr = document.getElementById('checker-headers').value.trim();
-                if (headersStr) headers = JSON.parse(headersStr);
-            } catch (e) { Utils.showToast('Invalid headers JSON', 'error'); return; }
-            
-            checkerConfig = {
-                apiUrl: apiUrl,
-                method: document.getElementById('checker-method').value,
-                headers: headers,
-                bodyTemplate: document.getElementById('checker-body-template').value.trim(),
-                responseNamePath: document.getElementById('checker-name-path').value.trim(),
-                responseValidPath: document.getElementById('checker-valid-path').value.trim(),
-                errorMessage: document.getElementById('checker-error-msg').value.trim() || 'Invalid Game ID'
-            };
+                checkerConfig = JSON.parse(jsonStr);
+                // Validate required fields
+                if (!checkerConfig.url && !checkerConfig.apiUrl) {
+                    Utils.showToast('Config must have "url" field', 'warning');
+                    return;
+                }
+            } catch (e) {
+                Utils.showToast('Invalid JSON: ' + e.message, 'error');
+                return;
+            }
         }
         
         Utils.showLoading('Saving...');
@@ -1117,49 +1346,122 @@ const AdminApp = {
         finally { Utils.hideLoading(); }
     },
     
-    // NEW: Test checker
+    // COMPLETELY REWRITTEN: Test Checker with JSON Config
     async testChecker() {
         const testValue = document.getElementById('checker-test-value').value.trim();
         if (!testValue) { Utils.showToast('Enter a test value', 'warning'); return; }
         
+        const jsonStr = document.getElementById('checker-json-config').value.trim();
+        if (!jsonStr) { Utils.showToast('Enter JSON config first', 'warning'); return; }
+        
         const resultDiv = document.getElementById('checker-test-result');
-        resultDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Testing...';
+        resultDiv.innerHTML = `
+            <div class="test-result-card loading">
+                <div class="checker-loading-content">
+                    <div class="checker-spinner"></div>
+                    <span>Testing Game ID Checker...</span>
+                </div>
+            </div>
+        `;
         resultDiv.classList.remove('hidden');
-        resultDiv.className = 'checker-test-result checking';
         
         try {
-            let headers = {};
-            try {
-                const h = document.getElementById('checker-headers').value.trim();
-                if (h) headers = JSON.parse(h);
-            } catch (e) {}
+            let config;
+            try { config = JSON.parse(jsonStr); } 
+            catch(e) { 
+                resultDiv.innerHTML = `<div class="test-result-card error"><i class="fas fa-exclamation-triangle"></i> Invalid JSON: ${e.message}</div>`;
+                return; 
+            }
             
-            const config = {
-                apiUrl: document.getElementById('checker-api-url').value.trim(),
-                method: document.getElementById('checker-method').value,
-                headers: headers,
-                bodyTemplate: document.getElementById('checker-body-template').value.trim(),
-                responseNamePath: document.getElementById('checker-name-path').value.trim(),
-                responseValidPath: document.getElementById('checker-valid-path').value.trim(),
-                errorMessage: document.getElementById('checker-error-msg').value.trim()
-            };
+            // Build test input values from other test inputs if any
+            const testInputValues = {};
+            const requiredInputs = GameIdChecker.getRequiredInputs(config);
+            requiredInputs.forEach(inputName => {
+                const testInputEl = document.getElementById(`checker-test-${inputName.replace(/\s/g, '-').toLowerCase()}`);
+                if (testInputEl) {
+                    testInputValues[inputName] = testInputEl.value || '';
+                }
+            });
             
-            const result = await GameIdChecker.check(config, testValue);
+            const result = await GameIdChecker.check(config, testValue, testInputValues);
             
             if (result && result.valid) {
-                resultDiv.innerHTML = `<i class="fas fa-check-circle"></i> Valid! Name: ${result.playerName || 'N/A'}<br><small>Raw: ${JSON.stringify(result.raw).substring(0, 200)}</small>`;
-                resultDiv.className = 'checker-test-result valid';
+                let infoRows = '';
+                if (result.nickname) infoRows += `<div class="test-info-row"><span>Nickname:</span><strong>${result.nickname}</strong></div>`;
+                if (result.country) infoRows += `<div class="test-info-row"><span>Country:</span><strong>${CountryHelper.getDisplay(result.country)}</strong></div>`;
+                
+                resultDiv.innerHTML = `
+                    <div class="test-result-card valid">
+                        <div class="test-result-header valid">
+                            <i class="fas fa-check-circle"></i> Test Successful - Account Found!
+                        </div>
+                        <div class="test-result-body">
+                            ${infoRows}
+                            <details class="raw-response">
+                                <summary>Raw API Response</summary>
+                                <pre>${JSON.stringify(result.raw, null, 2)}</pre>
+                            </details>
+                        </div>
+                    </div>
+                `;
             } else {
-                resultDiv.innerHTML = `<i class="fas fa-times-circle"></i> Invalid or failed<br><small>${result?.error || JSON.stringify(result?.raw || {}).substring(0, 200)}</small>`;
-                resultDiv.className = 'checker-test-result invalid';
+                resultDiv.innerHTML = `
+                    <div class="test-result-card invalid">
+                        <div class="test-result-header invalid">
+                            <i class="fas fa-times-circle"></i> Test Failed - Account Not Found
+                        </div>
+                        <div class="test-result-body">
+                            ${result?.error ? `<p class="error-msg">Error: ${result.error}</p>` : ''}
+                            <details class="raw-response">
+                                <summary>Raw API Response</summary>
+                                <pre>${JSON.stringify(result?.raw || {}, null, 2)}</pre>
+                            </details>
+                        </div>
+                    </div>
+                `;
             }
         } catch (error) {
-            resultDiv.innerHTML = `<i class="fas fa-exclamation-circle"></i> Error: ${error.message}`;
-            resultDiv.className = 'checker-test-result error';
+            resultDiv.innerHTML = `
+                <div class="test-result-card error">
+                    <div class="test-result-header error">
+                        <i class="fas fa-exclamation-triangle"></i> Test Error
+                    </div>
+                    <p>${error.message}</p>
+                </div>
+            `;
         }
     },
     
-    // ===== PAYMENTS (unchanged) =====
+    // NEW: Update test inputs when config changes (for multi-input support)
+    updateTestInputs() {
+        const jsonStr = document.getElementById('checker-json-config').value.trim();
+        const testInputsContainer = document.getElementById('checker-test-extra-inputs');
+        
+        if (!jsonStr || !testInputsContainer) return;
+        
+        try {
+            const config = JSON.parse(jsonStr);
+            const requiredInputs = GameIdChecker.getRequiredInputs(config);
+            
+            if (requiredInputs.length > 0) {
+                testInputsContainer.innerHTML = requiredInputs.map(name => `
+                    <div class="test-extra-input">
+                        <label>${name}</label>
+                        <input type="text" id="checker-test-${name.replace(/\s/g, '-').toLowerCase()}" placeholder="Enter test ${name}">
+                    </div>
+                `).join('');
+                testInputsContainer.classList.remove('hidden');
+            } else {
+                testInputsContainer.innerHTML = '';
+                testInputsContainer.classList.add('hidden');
+            }
+        } catch(e) {
+            testInputsContainer.innerHTML = '';
+            testInputsContainer.classList.add('hidden');
+        }
+    },
+    
+    // ===== PAYMENTS =====
     renderPayments() {
         const container = document.getElementById('admin-payments-list');
         if (!container) return;
@@ -1218,7 +1520,7 @@ const AdminApp = {
         finally { Utils.hideLoading(); }
     },
     
-    // ===== ANNOUNCEMENTS (unchanged) =====
+    // ===== ANNOUNCEMENTS =====
     renderAnnouncements() {
         const textArea = document.getElementById('announcement-text');
         const currentText = document.getElementById('current-announcement-text');
@@ -1240,7 +1542,7 @@ const AdminApp = {
         finally { Utils.hideLoading(); }
     },
     
-    // ===== BROADCAST (unchanged) =====
+    // ===== BROADCAST =====
     async sendBroadcast() {
         const message = document.getElementById('broadcast-message').value.trim();
         if (!message) { Utils.showToast('Please enter message', 'warning'); return; }
@@ -1258,7 +1560,7 @@ const AdminApp = {
         finally { Utils.hideLoading(); }
     },
     
-    // ===== BANNED USERS (unchanged) =====
+    // ===== BANNED USERS =====
     renderBannedUsers() {
         const container = document.getElementById('admin-banned-list');
         if (!container) return;
@@ -1274,7 +1576,7 @@ const AdminApp = {
         finally { Utils.hideLoading(); }
     },
     
-    // ===== CUSTOM EMOJIS (unchanged) =====
+    // ===== CUSTOM EMOJIS =====
     renderCustomEmojis() {
         const container = document.getElementById('admin-emojis-list');
         if (!container) return;
@@ -1343,7 +1645,7 @@ const AdminApp = {
         finally { Utils.hideLoading(); }
     },
     
-    // ===== SETTINGS (unchanged) =====
+    // ===== SETTINGS =====
     renderSettings() {
         const nameInput = document.getElementById('website-name');
         const currentLogo = document.getElementById('current-logo');
@@ -1373,7 +1675,7 @@ const AdminApp = {
         finally { Utils.hideLoading(); }
     },
     
-    // ===== DATABASE IDS (unchanged) =====
+    // ===== DATABASE IDS =====
     renderDatabaseIds() {
         document.getElementById('main-bin-id').textContent = CONFIG.BINS.MAIN || 'Not set';
         document.getElementById('users-bin-id').textContent = CONFIG.BINS.USERS || 'Not set';
@@ -1432,11 +1734,28 @@ function removeEmojiFile() { document.getElementById('emoji-file').value = ''; d
 function closeUserDetails() { AdminApp.closeUserDetails(); }
 function copyId(elementId) { Utils.copyToClipboard(document.getElementById(elementId).textContent); }
 
-// NEW: Toggle checker config visibility
+// Toggle checker config visibility
 function toggleCheckerConfig() {
     const enabled = document.getElementById('checker-enabled').checked;
-    document.getElementById('checker-config-section').classList.toggle('hidden', !enabled);
+    document.getElementById('checker-json-section').classList.toggle('hidden', !enabled);
+    document.getElementById('checker-test-section').classList.toggle('hidden', !enabled);
+    if (!enabled) {
+        document.getElementById('checker-json-preview').classList.add('hidden');
+        document.getElementById('checker-test-result').classList.add('hidden');
+    }
 }
+
+// NEW: Preview JSON config on input
+function onCheckerJsonInput() {
+    AdminApp.previewCheckerConfig();
+    AdminApp.updateTestInputs();
+}
+
+// NEW: Load sample config
+function loadSampleConfig(type) { AdminApp.loadSampleConfig(type); }
+
+// NEW: Test checker
+function testChecker() { AdminApp.testChecker(); }
 
 // Upload triggers
 function triggerCategoryIconUpload() { document.getElementById('category-icon').click(); }
@@ -1446,7 +1765,7 @@ function triggerPaymentIconUpload() { document.getElementById('payment-icon').cl
 function triggerLogoUpload() { document.getElementById('website-logo').click(); }
 function triggerBroadcastImageUpload() { document.getElementById('broadcast-image').click(); }
 
-// G2Bulk API reference (shared between admin and app)
+// G2Bulk API reference
 const G2BulkAPI = window.G2BulkAPI || {
     get URL() { return CONFIG.G2BULK.API_URL; },
     get KEY() { return CONFIG.G2BULK.API_KEY; },
@@ -1468,23 +1787,112 @@ window.G2BulkAPI = G2BulkAPI;
 
 // GameIdChecker for admin panel
 const GameIdChecker = window.GameIdChecker || {
-    async check(config, value) {
-        if (!config || !config.apiUrl) return null;
+    async check(config, value, allInputValues = {}) {
+        if (!config) return null;
+        if (typeof config === 'string') {
+            try { config = JSON.parse(config); } catch(e) { return null; }
+        }
+        const url = config.url || config.apiUrl;
+        if (!url) return null;
+        const method = (config.method || 'POST').toUpperCase();
+        const headers = config.headers || { 'Content-Type': 'application/json' };
+        
         try {
-            let url = config.apiUrl;
-            let options = { method: config.method || 'POST', headers: config.headers || { 'Content-Type': 'application/json' } };
-            if (options.method === 'POST' && config.bodyTemplate) options.body = config.bodyTemplate.replace(/\{\{value\}\}/g, value);
-            else if (options.method === 'GET') url = url.replace(/\{\{value\}\}/g, encodeURIComponent(value));
-            const response = await fetch(url, options);
+            let fetchUrl = url;
+            let options = { method, headers: { ...headers } };
+            const safeEscape = (val) => String(val || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+            
+            if (method === 'POST') {
+                if (config.body) {
+                    let bodyStr = JSON.stringify(config.body);
+                    bodyStr = bodyStr.replace(/\{\{value\}\}/gi, safeEscape(value));
+                    Object.entries(allInputValues).forEach(([name, val]) => {
+                        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        bodyStr = bodyStr.replace(new RegExp(`\\{\\{${escaped}\\}\\}`, 'g'), safeEscape(val));
+                    });
+                    options.body = bodyStr;
+                } else if (config.bodyTemplate) {
+                    options.body = config.bodyTemplate.replace(/\{\{value\}\}/gi, safeEscape(value));
+                }
+            } else if (method === 'GET') {
+                fetchUrl = fetchUrl.replace(/\{\{value\}\}/gi, encodeURIComponent(value));
+                Object.entries(allInputValues).forEach(([name, val]) => {
+                    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    fetchUrl = fetchUrl.replace(new RegExp(`\\{\\{${escaped}\\}\\}`, 'g'), encodeURIComponent(val || ''));
+                });
+            }
+            
+            const response = await fetch(fetchUrl, options);
             const data = await response.json();
-            const playerName = this.getNestedValue(data, config.responseNamePath);
-            const isValid = config.responseValidPath ? this.getNestedValue(data, config.responseValidPath) : !!playerName;
-            return { valid: isValid, playerName: playerName || null, raw: data };
-        } catch (error) { return { valid: false, playerName: null, error: error.message }; }
+            
+            let isValid = false, nickname = null, country = null;
+            
+            if (config.responsePath || config.response) {
+                const rp = config.responsePath || config.response;
+                const validValue = rp.valid ? this.getNestedValue(data, rp.valid) : null;
+                nickname = rp.nickname ? this.getNestedValue(data, rp.nickname) : null;
+                country = rp.country ? this.getNestedValue(data, rp.country) : null;
+                isValid = validValue !== null && validValue !== undefined ? !!validValue : !!nickname;
+            } else {
+                nickname = config.responseNamePath ? this.getNestedValue(data, config.responseNamePath) : null;
+                const validValue = config.responseValidPath ? this.getNestedValue(data, config.responseValidPath) : null;
+                isValid = validValue !== null && validValue !== undefined ? !!validValue : !!nickname;
+            }
+            
+            return { valid: isValid, nickname, playerName: nickname, country, raw: data };
+        } catch (error) { return { valid: false, nickname: null, playerName: null, country: null, error: error.message }; }
     },
-    getNestedValue(obj, path) { if (!path) return null; return path.split('.').reduce((c, k) => c?.[k], obj); }
+    getNestedValue(obj, path) { if (!path) return null; return path.split('.').reduce((c, k) => c?.[k], obj); },
+    getRequiredInputs(config) {
+        if (!config) return [];
+        if (typeof config === 'string') { try { config = JSON.parse(config); } catch(e) { return []; } }
+        if (!config.body) return [];
+        const bodyStr = JSON.stringify(config.body);
+        const matches = bodyStr.match(/\{\{([^}]+)\}\}/g) || [];
+        return matches.map(m => m.replace(/\{\{|\}\}/g, '')).filter(name => name.toLowerCase() !== 'value');
+    }
 };
 window.GameIdChecker = GameIdChecker;
+
+// CountryHelper for admin
+const CountryHelper = window.CountryHelper || {
+    countries: {
+        'AF':'🇦🇫 Afghanistan','AL':'🇦🇱 Albania','DZ':'🇩🇿 Algeria','AD':'🇦🇩 Andorra','AO':'🇦🇴 Angola',
+        'AR':'🇦🇷 Argentina','AM':'🇦🇲 Armenia','AU':'🇦🇺 Australia','AT':'🇦🇹 Austria','AZ':'🇦🇿 Azerbaijan',
+        'BH':'🇧🇭 Bahrain','BD':'🇧🇩 Bangladesh','BY':'🇧🇾 Belarus','BE':'🇧🇪 Belgium','BZ':'🇧🇿 Belize',
+        'BJ':'🇧🇯 Benin','BT':'🇧🇹 Bhutan','BO':'🇧🇴 Bolivia','BA':'🇧🇦 Bosnia','BW':'🇧🇼 Botswana',
+        'BR':'🇧🇷 Brazil','BN':'🇧🇳 Brunei','BG':'🇧🇬 Bulgaria','KH':'🇰🇭 Cambodia','CM':'🇨🇲 Cameroon',
+        'CA':'🇨🇦 Canada','CL':'🇨🇱 Chile','CN':'🇨🇳 China','CO':'🇨🇴 Colombia','CR':'🇨🇷 Costa Rica',
+        'HR':'🇭🇷 Croatia','CU':'🇨🇺 Cuba','CY':'🇨🇾 Cyprus','CZ':'🇨🇿 Czech Republic','DK':'🇩🇰 Denmark',
+        'DO':'🇩🇴 Dominican Republic','EC':'🇪🇨 Ecuador','EG':'🇪🇬 Egypt','SV':'🇸🇻 El Salvador',
+        'EE':'🇪🇪 Estonia','ET':'🇪🇹 Ethiopia','FI':'🇫🇮 Finland','FR':'🇫🇷 France','GE':'🇬🇪 Georgia',
+        'DE':'🇩🇪 Germany','GH':'🇬🇭 Ghana','GR':'🇬🇷 Greece','GT':'🇬🇹 Guatemala','HN':'🇭🇳 Honduras',
+        'HK':'🇭🇰 Hong Kong','HU':'🇭🇺 Hungary','IS':'🇮🇸 Iceland','IN':'🇮🇳 India','ID':'🇮🇩 Indonesia',
+        'IR':'🇮🇷 Iran','IQ':'🇮🇶 Iraq','IE':'🇮🇪 Ireland','IL':'🇮🇱 Israel','IT':'🇮🇹 Italy',
+        'JM':'🇯🇲 Jamaica','JP':'🇯🇵 Japan','JO':'🇯🇴 Jordan','KZ':'🇰🇿 Kazakhstan','KE':'🇰🇪 Kenya',
+        'KR':'🇰🇷 South Korea','KW':'🇰🇼 Kuwait','KG':'🇰🇬 Kyrgyzstan','LA':'🇱🇦 Laos','LV':'🇱🇻 Latvia',
+        'LB':'🇱🇧 Lebanon','LY':'🇱🇾 Libya','LT':'🇱🇹 Lithuania','LU':'🇱🇺 Luxembourg','MO':'🇲🇴 Macau',
+        'MY':'🇲🇾 Malaysia','MV':'🇲🇻 Maldives','ML':'🇲🇱 Mali','MT':'🇲🇹 Malta','MX':'🇲🇽 Mexico',
+        'MD':'🇲🇩 Moldova','MN':'🇲🇳 Mongolia','ME':'🇲🇪 Montenegro','MA':'🇲🇦 Morocco','MZ':'🇲🇿 Mozambique',
+        'MM':'🇲🇲 Myanmar','NA':'🇳🇦 Namibia','NP':'🇳🇵 Nepal','NL':'🇳🇱 Netherlands','NZ':'🇳🇿 New Zealand',
+        'NI':'🇳🇮 Nicaragua','NG':'🇳🇬 Nigeria','NO':'🇳🇴 Norway','OM':'🇴🇲 Oman','PK':'🇵🇰 Pakistan',
+        'PS':'🇵🇸 Palestine','PA':'🇵🇦 Panama','PY':'🇵🇾 Paraguay','PE':'🇵🇪 Peru','PH':'🇵🇭 Philippines',
+        'PL':'🇵🇱 Poland','PT':'🇵🇹 Portugal','QA':'🇶🇦 Qatar','RO':'🇷🇴 Romania','RU':'🇷🇺 Russia',
+        'RW':'🇷🇼 Rwanda','SA':'🇸🇦 Saudi Arabia','SN':'🇸🇳 Senegal','RS':'🇷🇸 Serbia','SG':'🇸🇬 Singapore',
+        'SK':'🇸🇰 Slovakia','SI':'🇸🇮 Slovenia','SO':'🇸🇴 Somalia','ZA':'🇿🇦 South Africa','ES':'🇪🇸 Spain',
+        'LK':'🇱🇰 Sri Lanka','SD':'🇸🇩 Sudan','SE':'🇸🇪 Sweden','CH':'🇨🇭 Switzerland','SY':'🇸🇾 Syria',
+        'TW':'🇹🇼 Taiwan','TJ':'🇹🇯 Tajikistan','TZ':'🇹🇿 Tanzania','TH':'🇹🇭 Thailand','TN':'🇹🇳 Tunisia',
+        'TR':'🇹🇷 Turkey','TM':'🇹🇲 Turkmenistan','UG':'🇺🇬 Uganda','UA':'🇺🇦 Ukraine','AE':'🇦🇪 UAE',
+        'GB':'🇬🇧 United Kingdom','US':'🇺🇸 United States','UY':'🇺🇾 Uruguay','UZ':'🇺🇿 Uzbekistan',
+        'VE':'🇻🇪 Venezuela','VN':'🇻🇳 Vietnam','YE':'🇾🇪 Yemen','ZM':'🇿🇲 Zambia','ZW':'🇿🇼 Zimbabwe'
+    },
+    getDisplay(code) {
+        if (!code) return '';
+        code = String(code).toUpperCase().trim();
+        return this.countries[code] || `🌍 ${code}`;
+    }
+};
+window.CountryHelper = CountryHelper;
 
 // ===== EVENT LISTENERS =====
 document.addEventListener('DOMContentLoaded', () => {
