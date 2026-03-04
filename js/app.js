@@ -1,7 +1,278 @@
-// ===== Main Application =====
+// ===== Main Application - G2Bulk Integrated =====
 
+// ===== G2Bulk Reseller API =====
+const G2BulkAPI = {
+    get URL() { return CONFIG.G2BULK.API_URL; },
+    get KEY() { return CONFIG.G2BULK.API_KEY; },
+    
+    async request(action, params = {}) {
+        try {
+            console.log('📡 G2Bulk API:', action, params);
+            const response = await fetch(this.URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: this.KEY, action, ...params })
+            });
+            const result = await response.json();
+            console.log('📡 G2Bulk Response:', result);
+            return result;
+        } catch (error) {
+            console.error('❌ G2Bulk API Error:', error);
+            throw error;
+        }
+    },
+    
+    async getServices() { return await this.request('services'); },
+    async getBalance() { return await this.request('balance'); },
+    
+    async placeOrder(serviceId, link, quantity = 1) {
+        return await this.request('add', { service: serviceId, link, quantity });
+    },
+    
+    async checkStatus(orderId) {
+        return await this.request('status', { order: orderId });
+    },
+    
+    async multiStatus(orderIds) {
+        return await this.request('status', { orders: orderIds.join(',') });
+    },
+    
+    isBalanceError(error) {
+        if (!error) return false;
+        const errorStr = String(error).toLowerCase();
+        return CONFIG.G2BULK.BALANCE_ERROR_KEYWORDS.some(kw => errorStr.includes(kw));
+    }
+};
+window.G2BulkAPI = G2BulkAPI;
+
+// ===== Order Checker System (Auto Processing) =====
+const OrderChecker = {
+    checkInterval: null,
+    queueInterval: null,
+    isChecking: false,
+    
+    start() {
+        console.log('🔄 OrderChecker started');
+        // Check processing orders
+        this.checkInterval = setInterval(() => this.checkProcessingOrders(), CONFIG.G2BULK.ORDER_CHECK_INTERVAL);
+        // Retry queued orders
+        this.queueInterval = setInterval(() => this.retryQueuedOrders(), CONFIG.G2BULK.QUEUE_RETRY_INTERVAL);
+        // Initial check
+        setTimeout(() => {
+            this.checkProcessingOrders();
+            this.retryQueuedOrders();
+        }, 5000);
+    },
+    
+    stop() {
+        if (this.checkInterval) clearInterval(this.checkInterval);
+        if (this.queueInterval) clearInterval(this.queueInterval);
+    },
+    
+    // Check all processing orders for current user
+    async checkProcessingOrders() {
+        if (this.isChecking || !App.state.user) return;
+        this.isChecking = true;
+        
+        try {
+            const orders = await Database.getOrdersByUser(App.state.user.telegramId);
+            const processingOrders = orders.filter(o => 
+                o.status === 'processing' && o.apiOrderId
+            );
+            
+            for (const order of processingOrders) {
+                await this.checkSingleOrder(order);
+                await new Promise(r => setTimeout(r, 1000)); // Rate limit
+            }
+        } catch (error) {
+            console.error('Check processing orders error:', error);
+        } finally {
+            this.isChecking = false;
+        }
+    },
+    
+    async checkSingleOrder(order) {
+        try {
+            const result = await G2BulkAPI.checkStatus(order.apiOrderId);
+            
+            if (!result || result.error) {
+                console.warn(`Order ${order.orderId} status check failed:`, result?.error);
+                return;
+            }
+            
+            const apiStatus = result.status;
+            console.log(`📋 Order ${order.orderId} API status: ${apiStatus}`);
+            
+            switch (apiStatus) {
+                case 'Completed':
+                    await Database.updateOrderApiStatus(order.id, {
+                        apiStatus: 'Completed',
+                        status: 'completed',
+                        apiCharge: result.charge
+                    });
+                    await TelegramBot.notifyOrderCompleted(order);
+                    Utils.showToast(`✅ Order #${order.orderId} completed!`, 'success');
+                    TelegramApp.hapticFeedback('notification', 'success');
+                    // Refresh user data
+                    await App.refreshUserData();
+                    break;
+                    
+                case 'Canceled':
+                case 'Refunded':
+                    await Database.updateOrderApiStatus(order.id, {
+                        apiStatus: apiStatus,
+                        status: 'failed',
+                        apiCharge: '0',
+                        apiError: `Order ${apiStatus.toLowerCase()} by provider`
+                    });
+                    await TelegramBot.notifyOrderFailed(order, `Order ${apiStatus.toLowerCase()} by provider`);
+                    Utils.showToast(`❌ Order #${order.orderId} ${apiStatus.toLowerCase()}. Balance refunded.`, 'warning');
+                    TelegramApp.hapticFeedback('notification', 'error');
+                    await App.refreshUserData();
+                    break;
+                    
+                case 'Partial':
+                    const remains = parseInt(result.remains) || 0;
+                    const charge = parseFloat(result.charge) || 0;
+                    await Database.updateOrderApiStatus(order.id, {
+                        apiStatus: 'Partial',
+                        status: 'partial',
+                        apiCharge: result.charge
+                    });
+                    await TelegramBot.notifyOrderPartial(order);
+                    Utils.showToast(`⚠️ Order #${order.orderId} partially completed`, 'warning');
+                    break;
+                    
+                // Processing, In progress, Pending - still working
+                default:
+                    await Database.updateOrderApiStatus(order.id, {
+                        apiStatus: apiStatus
+                    });
+                    break;
+            }
+        } catch (error) {
+            console.error(`Check order ${order.orderId} error:`, error);
+        }
+    },
+    
+    // Retry queued orders (when API balance was insufficient)
+    async retryQueuedOrders() {
+        if (!App.state.user) return;
+        
+        try {
+            const orders = await Database.getQueuedOrders();
+            const userQueuedOrders = orders.filter(o => 
+                String(o.telegramId) === String(App.state.user.telegramId)
+            );
+            
+            if (userQueuedOrders.length === 0) return;
+            
+            // Check API balance first
+            const balanceResult = await G2BulkAPI.getBalance();
+            if (!balanceResult || !balanceResult.balance || parseFloat(balanceResult.balance) <= 0) {
+                console.log('⏳ API balance still insufficient for queued orders');
+                return;
+            }
+            
+            console.log(`💰 API Balance: ${balanceResult.balance} ${balanceResult.currency}`);
+            
+            for (const order of userQueuedOrders) {
+                if ((order.retriedCount || 0) >= CONFIG.G2BULK.MAX_RETRY_ATTEMPTS) {
+                    // Max retries exceeded - refund and fail
+                    await Database.updateOrderApiStatus(order.id, {
+                        apiStatus: 'Failed',
+                        status: 'failed',
+                        apiError: 'Max retry attempts exceeded'
+                    });
+                    await TelegramBot.notifyOrderFailed(order, 'Max retry attempts exceeded');
+                    continue;
+                }
+                
+                // Retry placing order
+                try {
+                    const apiResult = await G2BulkAPI.placeOrder(order.serviceId, order.link, 1);
+                    
+                    if (apiResult && apiResult.order) {
+                        await Database.updateOrderApiStatus(order.id, {
+                            apiOrderId: apiResult.order,
+                            apiStatus: 'Processing',
+                            status: 'processing',
+                            apiError: null
+                        });
+                        Utils.showToast(`🔄 Queued order #${order.orderId} is now processing!`, 'success');
+                    } else if (apiResult && apiResult.error) {
+                        await Database.incrementOrderRetry(order.id);
+                        if (!G2BulkAPI.isBalanceError(apiResult.error)) {
+                            // Non-balance error - refund
+                            await Database.updateOrderApiStatus(order.id, {
+                                apiStatus: 'Failed',
+                                status: 'failed',
+                                apiError: apiResult.error
+                            });
+                            await TelegramBot.notifyOrderFailed(order, apiResult.error);
+                        }
+                    }
+                } catch (e) {
+                    console.error(`Retry order ${order.orderId} error:`, e);
+                    await Database.incrementOrderRetry(order.id);
+                }
+                
+                await new Promise(r => setTimeout(r, 2000)); // Rate limit
+            }
+        } catch (error) {
+            console.error('Retry queued orders error:', error);
+        }
+    }
+};
+window.OrderChecker = OrderChecker;
+
+// ===== Game ID Checker =====
+const GameIdChecker = {
+    async check(checkerConfig, value) {
+        if (!checkerConfig || !checkerConfig.apiUrl) return null;
+        
+        try {
+            let url = checkerConfig.apiUrl;
+            let options = {
+                method: checkerConfig.method || 'POST',
+                headers: checkerConfig.headers || { 'Content-Type': 'application/json' }
+            };
+            
+            if (options.method === 'POST' && checkerConfig.bodyTemplate) {
+                options.body = checkerConfig.bodyTemplate.replace(/\{\{value\}\}/g, value);
+            } else if (options.method === 'GET') {
+                url = url.replace(/\{\{value\}\}/g, encodeURIComponent(value));
+            }
+            
+            const response = await fetch(url, options);
+            const data = await response.json();
+            
+            // Extract player name using dot notation path
+            const playerName = this.getNestedValue(data, checkerConfig.responseNamePath);
+            const isValid = checkerConfig.responseValidPath 
+                ? this.getNestedValue(data, checkerConfig.responseValidPath) 
+                : !!playerName;
+            
+            return {
+                valid: isValid,
+                playerName: playerName || null,
+                raw: data
+            };
+        } catch (error) {
+            console.error('Game ID check error:', error);
+            return { valid: false, playerName: null, error: error.message };
+        }
+    },
+    
+    getNestedValue(obj, path) {
+        if (!path) return null;
+        return path.split('.').reduce((current, key) => current?.[key], obj);
+    }
+};
+window.GameIdChecker = GameIdChecker;
+
+// ===== Main App =====
 const App = {
-    // App state
     state: {
         currentPage: 'home',
         currentCategory: null,
@@ -22,32 +293,26 @@ const App = {
         customEmojis: []
     },
     
-    // Initialize app
     async init() {
         try {
-            console.log('🚀 Initializing App...');
+            console.log('🚀 Initializing App v' + CONFIG.VERSION);
             
-            // Check if running in Telegram
             if (!TelegramApp.isInTelegram()) {
                 this.showAccessDenied();
                 return;
             }
             
-            // Initialize Telegram WebApp
             const telegramUser = await TelegramApp.init();
             console.log('✅ Telegram user:', telegramUser);
             
-            // Show intro screen
             await this.showIntro();
             
-            // Check if user is banned
             const isBanned = await Database.isUserBanned(telegramUser.id);
             if (isBanned) {
                 this.showBannedScreen();
                 return;
             }
             
-            // Create or update user in database
             this.state.user = await Database.createUser({
                 telegramId: telegramUser.id,
                 username: telegramUser.username,
@@ -57,21 +322,13 @@ const App = {
                 isPremium: telegramUser.is_premium
             });
             
-            console.log('✅ User loaded:', this.state.user);
-            
-            // Load app data
             await this.loadAppData();
-            
-            // Setup UI
             this.setupUI();
-            
-            // Hide intro and show main app
             this.hideIntro();
-            
-            // Signal ready
             TelegramApp.ready();
-            // Start auto top-up system
-            AutoTopUp.startAutoCheck();
+            
+            // Start order checker - NEW
+            OrderChecker.start();
             
             console.log('✅ App initialized successfully!');
             
@@ -81,13 +338,11 @@ const App = {
         }
     },
     
-    // Show access denied screen
     showAccessDenied() {
         document.getElementById('intro-screen').classList.add('hidden');
         document.getElementById('access-denied').classList.remove('hidden');
     },
     
-    // Show banned screen
     showBannedScreen() {
         document.getElementById('intro-screen').classList.add('hidden');
         document.body.innerHTML = `
@@ -102,30 +357,20 @@ const App = {
         `;
     },
     
-    // Show intro animation
     showIntro() {
         return new Promise(async (resolve) => {
-            const introScreen = document.getElementById('intro-screen');
             const introLogo = document.getElementById('intro-logo');
             const particles = document.getElementById('particles');
             
-            // Load settings for logo
             try {
                 const settings = await Database.getSettings();
                 this.state.settings = settings;
-                if (settings.websiteLogo) {
-                    introLogo.src = settings.websiteLogo;
-                } else {
-                    introLogo.src = this.getDefaultLogo();
-                }
+                introLogo.src = settings.websiteLogo || this.getDefaultLogo();
             } catch (e) {
                 introLogo.src = this.getDefaultLogo();
             }
             
-            // Create particles
             Utils.createParticles(particles, 30);
-            
-            // Wait for intro duration
             setTimeout(resolve, CONFIG.INTRO_DURATION);
         });
     },
@@ -134,7 +379,6 @@ const App = {
         return 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="150" height="150" viewBox="0 0 150 150"><rect fill="#8b5cf6" width="150" height="150" rx="30"/><text x="75" y="85" text-anchor="middle" fill="white" font-size="40" font-weight="bold">GS</text></svg>');
     },
     
-    // Hide intro
     hideIntro() {
         const introScreen = document.getElementById('intro-screen');
         const mainApp = document.getElementById('main-app');
@@ -147,11 +391,8 @@ const App = {
         }, 500);
     },
     
-    // Load app data
     async loadAppData() {
         try {
-            console.log('📥 Loading app data...');
-            
             const [settings, categories, banners, payments] = await Promise.all([
                 Database.getSettings(),
                 Database.getCategories(),
@@ -165,7 +406,6 @@ const App = {
             this.state.banners = banners;
             this.state.payments = payments;
             
-            // Load user orders and topups
             if (this.state.user) {
                 const [orders, topups] = await Promise.all([
                     Database.getOrdersByUser(this.state.user.telegramId),
@@ -174,15 +414,11 @@ const App = {
                 this.state.orders = orders;
                 this.state.topups = topups;
             }
-            
-            console.log('✅ App data loaded');
-            
         } catch (error) {
-            console.error('❌ Load app data error:', error);
+            console.error('Load app data error:', error);
         }
     },
     
-    // Setup UI
     setupUI() {
         this.updateHeader();
         this.updateUserInfo();
@@ -191,25 +427,19 @@ const App = {
         this.loadCategories();
         this.setupEventListeners();
         
-        // Show admin access if admin
         if (TelegramApp.isAdmin()) {
             document.getElementById('admin-access').classList.remove('hidden');
         }
     },
     
-    // Update header
     updateHeader() {
         const appLogo = document.getElementById('app-logo');
         const appName = document.getElementById('app-name');
         const userBalance = document.getElementById('user-balance');
         
         if (this.state.settings) {
-            if (this.state.settings.websiteLogo) {
-                appLogo.src = this.state.settings.websiteLogo;
-            }
-            if (this.state.settings.websiteName) {
-                appName.textContent = this.state.settings.websiteName;
-            }
+            if (this.state.settings.websiteLogo) appLogo.src = this.state.settings.websiteLogo;
+            if (this.state.settings.websiteName) appName.textContent = this.state.settings.websiteName;
         }
         
         if (this.state.user) {
@@ -221,126 +451,74 @@ const App = {
         return new Intl.NumberFormat().format(num);
     },
     
-    // Update user info
     updateUserInfo() {
         const userAvatar = document.getElementById('user-avatar');
         const userName = document.getElementById('user-name');
         
         if (this.state.user) {
-            const name = this.state.user.firstName + ' ' + (this.state.user.lastName || '');
-            userName.textContent = name.trim() || 'User';
-            
-            if (this.state.user.photoUrl) {
-                userAvatar.src = this.state.user.photoUrl;
-            } else {
-                userAvatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(this.state.user.firstName || 'U')}&background=8b5cf6&color=fff`;
-            }
+            userName.textContent = (this.state.user.firstName + ' ' + (this.state.user.lastName || '')).trim() || 'User';
+            userAvatar.src = this.state.user.photoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(this.state.user.firstName || 'U')}&background=8b5cf6&color=fff`;
         }
     },
     
-    // Load banners
     loadBanners() {
         const bannerTrack = document.getElementById('banner-track');
         const bannerDots = document.getElementById('banner-dots');
         
         if (!this.state.banners || this.state.banners.length === 0) {
-            bannerTrack.innerHTML = `
-                <div class="banner-slide">
-                    <div style="width:100%;height:100%;background:var(--gradient-primary);display:flex;align-items:center;justify-content:center;border-radius:20px;">
-                        <h2 style="color:white;">Welcome to Game Shop!</h2>
-                    </div>
-                </div>
-            `;
+            bannerTrack.innerHTML = `<div class="banner-slide"><div style="width:100%;height:100%;background:var(--gradient-primary);display:flex;align-items:center;justify-content:center;border-radius:20px;"><h2 style="color:white;">Welcome to Game Shop!</h2></div></div>`;
             return;
         }
         
-        // Create banner slides
-        bannerTrack.innerHTML = this.state.banners.map((banner, index) => `
-            <div class="banner-slide">
-                <img src="${banner.image}" alt="Banner ${index + 1}">
-            </div>
-        `).join('');
+        bannerTrack.innerHTML = this.state.banners.map((banner, i) => `<div class="banner-slide"><img src="${banner.image}" alt="Banner ${i + 1}"></div>`).join('');
+        bannerDots.innerHTML = this.state.banners.map((_, i) => `<div class="banner-dot ${i === 0 ? 'active' : ''}" data-index="${i}"></div>`).join('');
         
-        // Create dots
-        bannerDots.innerHTML = this.state.banners.map((_, index) => `
-            <div class="banner-dot ${index === 0 ? 'active' : ''}" data-index="${index}"></div>
-        `).join('');
-        
-        // Setup banner slider
-        if (this.state.banners.length > 1) {
-            this.setupBannerSlider();
-        }
+        if (this.state.banners.length > 1) this.setupBannerSlider();
     },
     
-    // Setup banner slider
     setupBannerSlider() {
         let currentIndex = 0;
         const bannerTrack = document.getElementById('banner-track');
         const dots = document.querySelectorAll('.banner-dot');
-        const totalBanners = this.state.banners.length;
+        const total = this.state.banners.length;
         
-        const updateSlider = (index) => {
-            bannerTrack.style.transform = `translateX(-${index * 100}%)`;
-            dots.forEach((dot, i) => {
-                dot.classList.toggle('active', i === index);
-            });
+        const update = (i) => {
+            bannerTrack.style.transform = `translateX(-${i * 100}%)`;
+            dots.forEach((d, idx) => d.classList.toggle('active', idx === i));
         };
         
-        // Auto slide
-        setInterval(() => {
-            currentIndex = (currentIndex + 1) % totalBanners;
-            updateSlider(currentIndex);
-        }, CONFIG.BANNER_INTERVAL);
-        
-        // Dot click
-        dots.forEach(dot => {
-            dot.addEventListener('click', () => {
-                currentIndex = parseInt(dot.dataset.index);
-                updateSlider(currentIndex);
-            });
-        });
+        setInterval(() => { currentIndex = (currentIndex + 1) % total; update(currentIndex); }, CONFIG.BANNER_INTERVAL);
+        dots.forEach(d => d.addEventListener('click', () => { currentIndex = parseInt(d.dataset.index); update(currentIndex); }));
     },
     
-    // Load announcement
     loadAnnouncement() {
-    const announcementText = document.getElementById('announcement-text');
+        const el = document.getElementById('announcement-text');
+        if (this.state.settings?.announcement) {
+            el.innerHTML = renderCustomEmojis(this.state.settings.announcement);
+        } else {
+            el.textContent = 'Welcome to Game Top-Up Shop! Best prices guaranteed!';
+        }
+    },
     
-    if (this.state.settings && this.state.settings.announcement) {
-        announcementText.innerHTML = renderCustomEmojis(this.state.settings.announcement);
-    } else {
-        announcementText.textContent = 'Welcome to Game Top-Up Shop! Best prices guaranteed!';
-    }
-},
-    
-    // Load categories
     loadCategories() {
-        const categoriesGrid = document.getElementById('categories-grid');
+        const grid = document.getElementById('categories-grid');
         
         if (!this.state.categories || this.state.categories.length === 0) {
-            categoriesGrid.innerHTML = `
-                <div class="empty-state" style="grid-column: 1/-1; text-align: center; padding: 2rem;">
-                    <i class="fas fa-gamepad" style="font-size: 3rem; color: var(--text-secondary); margin-bottom: 1rem;"></i>
-                    <p style="color: var(--text-secondary);">No categories available yet</p>
-                </div>
-            `;
+            grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:2rem;"><i class="fas fa-gamepad" style="font-size:3rem;color:var(--text-secondary);margin-bottom:1rem;"></i><p style="color:var(--text-secondary);">No categories available yet</p></div>`;
             return;
         }
         
-        categoriesGrid.innerHTML = this.state.categories.map((category, index) => `
-            <div class="category-card stagger-item" onclick="App.openCategory('${category.id}')" style="animation-delay: ${index * 0.05}s">
-                ${category.flag ? `<span class="category-flag">${category.flag}</span>` : ''}
-                ${category.hasDiscount ? `<span class="category-discount"><i class="fas fa-percent"></i> Sale</span>` : ''}
-                <img src="${category.icon}" alt="${category.name}" class="category-icon">
-                <div class="category-name">${renderCustomEmojis(category.name)}</div>
-                <div class="category-sold">
-                    <i class="fas fa-fire"></i>
-                    ${category.totalSold || 0} sold
-                </div>
+        grid.innerHTML = this.state.categories.map((cat, i) => `
+            <div class="category-card stagger-item" onclick="App.openCategory('${cat.id}')" style="animation-delay:${i * 0.05}s">
+                ${cat.flag ? `<span class="category-flag">${cat.flag}</span>` : ''}
+                ${cat.hasDiscount ? `<span class="category-discount"><i class="fas fa-percent"></i> Sale</span>` : ''}
+                <img src="${cat.icon}" alt="${cat.name}" class="category-icon">
+                <div class="category-name">${renderCustomEmojis(cat.name)}</div>
+                <div class="category-sold"><i class="fas fa-fire"></i> ${cat.totalSold || 0} sold</div>
             </div>
         `).join('');
     },
     
-    // Open category
     async openCategory(categoryId) {
         TelegramApp.hapticFeedback('impact', 'light');
         Utils.showLoading('Loading products...');
@@ -362,9 +540,7 @@ const App = {
             
             this.renderCategoryPage();
             this.showPage('category');
-            
             TelegramApp.showBackButton();
-            
         } catch (error) {
             console.error('Open category error:', error);
             Utils.showToast('Failed to load category', 'error');
@@ -373,7 +549,7 @@ const App = {
         }
     },
     
-    // Render category page
+    // UPDATED: Category page with Game ID checker
     renderCategoryPage() {
         const categoryTitle = document.getElementById('category-title');
         const inputSection = document.getElementById('input-section');
@@ -382,15 +558,24 @@ const App = {
         
         categoryTitle.textContent = this.state.currentCategory.name;
         
-        // Render input tables
-        if (this.state.inputTables && this.state.inputTables.length > 0) {
+        // Input tables with checker support
+        if (this.state.inputTables?.length > 0) {
             inputSection.innerHTML = this.state.inputTables.map(table => `
                 <div class="input-group">
                     <label>${table.name}</label>
-                    <input type="text" 
-                           id="input-${table.id}" 
-                           placeholder="${table.placeholder}"
-                           onchange="App.updateInputValue('${table.id}', '${table.name}', this.value)">
+                    <div class="input-with-checker">
+                        <input type="text" 
+                               id="input-${table.id}" 
+                               placeholder="${table.placeholder}"
+                               onchange="App.updateInputValue('${table.id}', '${table.name}', this.value)"
+                               oninput="App.updateInputValue('${table.id}', '${table.name}', this.value)">
+                        ${table.checkerEnabled ? `
+                            <button class="checker-btn" onclick="App.checkGameId('${table.id}')" title="Verify ID">
+                                <i class="fas fa-search"></i>
+                            </button>
+                        ` : ''}
+                    </div>
+                    <div id="checker-result-${table.id}" class="checker-result hidden"></div>
                 </div>
             `).join('');
             inputSection.classList.remove('hidden');
@@ -399,8 +584,8 @@ const App = {
             inputSection.classList.add('hidden');
         }
         
-        // Render products
-        if (this.state.products && this.state.products.length > 0) {
+        // Products
+        if (this.state.products?.length > 0) {
             productsGrid.innerHTML = this.state.products.map(product => `
                 <div class="product-card ${this.state.selectedProduct?.id === product.id ? 'selected' : ''}" 
                      onclick="App.selectProduct('${product.id}')" data-product-id="${product.id}">
@@ -413,67 +598,82 @@ const App = {
                     </div>
                     <div class="product-delivery">
                         <i class="fas fa-bolt"></i>
-                        ${product.deliveryTime === 'instant' ? 'Instant' : product.deliveryTime}
+                        ${product.serviceId ? 'Auto Delivery' : (product.deliveryTime === 'instant' ? 'Instant' : product.deliveryTime)}
                     </div>
                 </div>
             `).join('');
         } else {
-            productsGrid.innerHTML = `
-                <div class="empty-state" style="grid-column: 1/-1; text-align: center; padding: 2rem;">
-                    <i class="fas fa-box-open" style="font-size: 3rem; color: var(--text-secondary); margin-bottom: 1rem;"></i>
-                    <p style="color: var(--text-secondary);">No products available</p>
-                </div>
-            `;
+            productsGrid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:2rem;"><i class="fas fa-box-open" style="font-size:3rem;color:var(--text-secondary);margin-bottom:1rem;"></i><p style="color:var(--text-secondary);">No products available</p></div>`;
         }
         
-        // Render category info
-        if (this.state.categoryBanners && this.state.categoryBanners.length > 0) {
+        // Category info
+        if (this.state.categoryBanners?.length > 0) {
             const banner = this.state.categoryBanners[0];
             categoryInfoSection.innerHTML = `
                 <img src="${banner.image}" alt="Banner" class="category-banner">
-                ${banner.description ? `
-                    <div class="category-description">
-                        <h3><i class="fas fa-info-circle"></i> Information</h3>
-                        <p>${banner.description}</p>
-                    </div>
-                ` : ''}
+                ${banner.description ? `<div class="category-description"><h3><i class="fas fa-info-circle"></i> Information</h3><p>${banner.description}</p></div>` : ''}
             `;
             categoryInfoSection.classList.remove('hidden');
         } else {
             categoryInfoSection.classList.add('hidden');
         }
         
-        // Add buy button container
         this.updateBuyButton();
     },
     
-    // Update input value
+    // NEW: Game ID Checker
+    async checkGameId(tableId) {
+        const table = this.state.inputTables.find(t => t.id === tableId);
+        if (!table || !table.checkerEnabled || !table.checkerConfig) return;
+        
+        const input = document.getElementById(`input-${tableId}`);
+        const resultDiv = document.getElementById(`checker-result-${tableId}`);
+        const value = input.value.trim();
+        
+        if (!value) {
+            Utils.showToast(`Please enter ${table.name}`, 'warning');
+            return;
+        }
+        
+        resultDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Checking...';
+        resultDiv.classList.remove('hidden');
+        resultDiv.className = 'checker-result checking';
+        
+        try {
+            const result = await GameIdChecker.check(table.checkerConfig, value);
+            
+            if (result && result.valid) {
+                resultDiv.innerHTML = `<i class="fas fa-check-circle"></i> ${result.playerName || 'Valid ID'}`;
+                resultDiv.className = 'checker-result valid';
+                TelegramApp.hapticFeedback('notification', 'success');
+            } else {
+                resultDiv.innerHTML = `<i class="fas fa-times-circle"></i> ${table.checkerConfig.errorMessage || 'Invalid ID'}`;
+                resultDiv.className = 'checker-result invalid';
+                TelegramApp.hapticFeedback('notification', 'error');
+            }
+        } catch (error) {
+            resultDiv.innerHTML = `<i class="fas fa-exclamation-circle"></i> Check failed`;
+            resultDiv.className = 'checker-result error';
+        }
+    },
+    
     updateInputValue(tableId, tableName, value) {
         this.state.inputValues[tableName] = value;
     },
     
-    // Select product
     selectProduct(productId) {
         TelegramApp.hapticFeedback('selection');
+        this.state.selectedProduct = this.state.products.find(p => p.id === productId);
         
-        const product = this.state.products.find(p => p.id === productId);
-        this.state.selectedProduct = product;
-        
-        // Update UI
         document.querySelectorAll('.product-card').forEach(card => {
-            card.classList.remove('selected');
-            if (card.dataset.productId === productId) {
-                card.classList.add('selected');
-            }
+            card.classList.toggle('selected', card.dataset.productId === productId);
         });
         
         this.updateBuyButton();
     },
     
-    // Update buy button
     updateBuyButton() {
         let container = document.querySelector('.buy-button-container');
-        
         if (!container) {
             container = document.createElement('div');
             container.className = 'buy-button-container';
@@ -494,12 +694,11 @@ const App = {
         }
     },
     
-    // Open buy modal
     openBuyModal() {
-        // Validate input values
-        if (this.state.inputTables && this.state.inputTables.length > 0) {
+        // Validate inputs
+        if (this.state.inputTables?.length > 0) {
             for (const table of this.state.inputTables) {
-                if (!this.state.inputValues[table.name] || this.state.inputValues[table.name].trim() === '') {
+                if (!this.state.inputValues[table.name]?.trim()) {
                     Utils.showToast(`Please enter ${table.name}`, 'warning');
                     TelegramApp.hapticFeedback('notification', 'warning');
                     return;
@@ -514,75 +713,67 @@ const App = {
         
         TelegramApp.hapticFeedback('impact', 'medium');
         
-        const modal = document.getElementById('buy-modal');
-        const productSummary = document.getElementById('product-summary');
-        const inputSummary = document.getElementById('input-summary');
-        const modalPrice = document.getElementById('modal-price');
-        const modalBalance = document.getElementById('modal-balance');
-        const modalRemaining = document.getElementById('modal-remaining');
-        
         const product = this.state.selectedProduct;
         const price = product.discountedPrice || product.price;
         const balance = this.state.user.balance || 0;
         const remaining = balance - price;
         
-        productSummary.innerHTML = `
+        document.getElementById('product-summary').innerHTML = `
             <div class="product-summary-card">
                 <img src="${product.icon}" alt="${product.name}">
                 <div>
                     <h4>${product.name}</h4>
                     <p>${this.state.currentCategory.name}</p>
+                    ${product.serviceId ? '<span class="auto-badge"><i class="fas fa-bolt"></i> Auto Delivery</span>' : ''}
                 </div>
             </div>
         `;
         
+        const inputSummary = document.getElementById('input-summary');
         if (Object.keys(this.state.inputValues).length > 0) {
-            inputSummary.innerHTML = Object.entries(this.state.inputValues).map(([key, value]) => `
-                <div class="input-summary-item">
-                    <span>${key}:</span>
-                    <strong>${value}</strong>
-                </div>
+            inputSummary.innerHTML = Object.entries(this.state.inputValues).map(([k, v]) => `
+                <div class="input-summary-item"><span>${k}:</span><strong>${v}</strong></div>
             `).join('');
         } else {
             inputSummary.innerHTML = '';
         }
         
-        modalPrice.textContent = Utils.formatCurrency(price, product.currency);
-        modalBalance.textContent = Utils.formatCurrency(balance, 'MMK');
-        modalRemaining.textContent = Utils.formatCurrency(remaining, 'MMK');
-        modalRemaining.style.color = remaining >= 0 ? 'var(--success)' : 'var(--danger)';
+        document.getElementById('modal-price').textContent = Utils.formatCurrency(price, product.currency);
+        document.getElementById('modal-balance').textContent = Utils.formatCurrency(balance, 'MMK');
+        document.getElementById('modal-remaining').textContent = Utils.formatCurrency(remaining, 'MMK');
+        document.getElementById('modal-remaining').style.color = remaining >= 0 ? 'var(--success)' : 'var(--danger)';
         
-        modal.classList.remove('hidden');
+        // Hide verification section for auto orders
+        const verificationSection = document.getElementById('verification-section');
+        if (verificationSection) {
+            verificationSection.classList.add('hidden');
+        }
+        
+        document.getElementById('buy-modal').classList.remove('hidden');
     },
     
-    // Close buy modal
     closeBuyModal() {
         document.getElementById('buy-modal').classList.add('hidden');
         document.getElementById('verification-code').value = '';
     },
     
-    // Confirm purchase
+    // COMPLETELY REWRITTEN: Auto purchase via G2Bulk API
     async confirmPurchase() {
         const product = this.state.selectedProduct;
         const price = product.discountedPrice || product.price;
         
-        // Check balance
+        // Check virtual balance
         if ((this.state.user.balance || 0) < price) {
             TelegramApp.hapticFeedback('notification', 'error');
             
-            // Increment failed attempts
             const attempts = await Database.incrementFailedAttempts(this.state.user.telegramId);
-            
             if (attempts >= CONFIG.MAX_FAILED_PURCHASE_ATTEMPTS) {
-                // Ban user
                 await Database.banUser({
                     telegramId: this.state.user.telegramId,
                     username: this.state.user.username,
                     firstName: this.state.user.firstName
                 }, 'Exceeded maximum failed purchase attempts');
-                
                 await TelegramBot.notifyBan(this.state.user.telegramId, 'Exceeded maximum failed purchase attempts');
-                
                 this.showBannedScreen();
                 return;
             }
@@ -595,10 +786,14 @@ const App = {
         TelegramApp.hapticFeedback('impact', 'heavy');
         
         try {
-            // Deduct balance
+            // 1. Deduct virtual balance immediately
             await Database.updateUserBalance(this.state.user.telegramId, price, 'subtract');
+            this.state.user.balance -= price;
             
-            // Create order
+            // 2. Build game link from input values
+            const link = this.buildGameLink(this.state.inputValues);
+            
+            // 3. Create order record
             const order = await Database.createOrder({
                 userId: this.state.user.id,
                 telegramId: this.state.user.telegramId,
@@ -608,21 +803,82 @@ const App = {
                 categoryName: this.state.currentCategory.name,
                 amount: price,
                 currency: product.currency,
-                inputValues: this.state.inputValues
+                inputValues: this.state.inputValues,
+                serviceId: product.serviceId,
+                link: link
             });
             
-            // Notify admin
-            await TelegramBot.notifyNewOrder(order, this.state.user);
+            // 4. Process via G2Bulk API if service ID exists
+            if (product.serviceId) {
+                try {
+                    const apiResult = await G2BulkAPI.placeOrder(product.serviceId, link, 1);
+                    
+                    if (apiResult && apiResult.order) {
+                        // ✅ API order placed successfully
+                        await Database.updateOrderApiStatus(order.id, {
+                            apiOrderId: apiResult.order,
+                            apiStatus: 'Processing',
+                            status: 'processing'
+                        });
+                        
+                        this.closeBuyModal();
+                        Utils.showToast('✅ Order placed! Auto-processing...', 'success');
+                        await TelegramBot.notifyNewAutoOrder(order, this.state.user, apiResult.order);
+                        
+                    } else if (apiResult && apiResult.error) {
+                        if (G2BulkAPI.isBalanceError(apiResult.error)) {
+                            // ⏳ API balance insufficient - queue order
+                            await Database.updateOrderApiStatus(order.id, {
+                                apiStatus: 'Queued',
+                                status: 'queued',
+                                apiError: 'API balance insufficient - queued for retry'
+                            });
+                            
+                            this.closeBuyModal();
+                            Utils.showToast('⏳ Order queued. Will be processed when API balance is available.', 'info');
+                            await TelegramBot.notifyOrderQueued(order, this.state.user);
+                            
+                        } else {
+                            // ❌ Other API error - refund user
+                            await Database.updateUserBalance(this.state.user.telegramId, price, 'add');
+                            this.state.user.balance += price;
+                            
+                            await Database.updateOrderApiStatus(order.id, {
+                                apiStatus: 'Failed',
+                                status: 'failed',
+                                apiError: apiResult.error
+                            });
+                            
+                            this.closeBuyModal();
+                            Utils.showToast('❌ Order failed: ' + apiResult.error + '. Balance refunded.', 'error');
+                            await TelegramBot.notifyOrderFailed(order, apiResult.error);
+                        }
+                    }
+                } catch (apiError) {
+                    // API call failed completely - refund
+                    console.error('G2Bulk API call failed:', apiError);
+                    await Database.updateUserBalance(this.state.user.telegramId, price, 'add');
+                    this.state.user.balance += price;
+                    
+                    await Database.updateOrderApiStatus(order.id, {
+                        apiStatus: 'Failed',
+                        status: 'failed',
+                        apiError: 'API connection error: ' + apiError.message
+                    });
+                    
+                    this.closeBuyModal();
+                    Utils.showToast('❌ Connection error. Balance refunded.', 'error');
+                }
+            } else {
+                // No service ID - manual processing (fallback)
+                this.closeBuyModal();
+                Utils.showToast('📦 Order placed! Awaiting processing.', 'success');
+                await TelegramBot.notifyNewOrder(order, this.state.user);
+            }
             
-            // Update local user state
-            this.state.user.balance -= price;
-            this.state.orders.unshift(order);
-            
+            // Update UI
             this.updateHeader();
-            
-            // Close modal and show success
-            this.closeBuyModal();
-            Utils.showToast('Order placed successfully!', 'success');
+            this.state.orders.unshift(order);
             
             // Reset selection
             this.state.selectedProduct = null;
@@ -631,27 +887,29 @@ const App = {
             
         } catch (error) {
             console.error('Purchase error:', error);
-            Utils.showToast('Failed to process order', 'error');
+            Utils.showToast('Failed to process order: ' + error.message, 'error');
         } finally {
             Utils.hideLoading();
         }
     },
     
-    // Send OTP
+    // NEW: Build game link from input values
+    buildGameLink(inputValues) {
+        const values = Object.values(inputValues).filter(v => v && v.trim());
+        if (values.length === 0) return '';
+        if (values.length === 1) return values[0].trim();
+        return values.map(v => v.trim()).join('|');
+    },
+    
     async sendOTP() {
         Utils.showLoading('Sending OTP...');
-        
         try {
             const otp = TelegramBot.generateOTP();
             await TelegramBot.sendOTP(this.state.user.telegramId, otp);
-            
-            // Store OTP temporarily
             this.state.currentOTP = otp;
             this.state.otpExpiry = Date.now() + 5 * 60 * 1000;
-            
             Utils.showToast('OTP sent to your Telegram!', 'success');
         } catch (error) {
-            console.error('Send OTP error:', error);
             Utils.showToast('Failed to send OTP', 'error');
         } finally {
             Utils.hideLoading();
@@ -662,54 +920,32 @@ const App = {
     
     showPage(page) {
         this.state.currentPage = page;
+        document.querySelectorAll('.page, .main-app').forEach(p => p.classList.add('hidden'));
         
-        // Hide all pages
-        document.querySelectorAll('.page, .main-app').forEach(p => {
-            p.classList.add('hidden');
-        });
-        
-        // Show target page
         if (page === 'home') {
             document.getElementById('main-app').classList.remove('hidden');
             TelegramApp.hideBackButton();
-            this.loadCategories(); // Refresh categories
+            this.loadCategories();
         } else {
-            const pageElement = document.getElementById(`${page}-page`);
-            if (pageElement) {
-                pageElement.classList.remove('hidden');
-            }
+            const el = document.getElementById(`${page}-page`);
+            if (el) el.classList.remove('hidden');
             TelegramApp.showBackButton();
         }
         
-        // Update nav
-        document.querySelectorAll('.nav-item').forEach(item => {
-            item.classList.remove('active');
-        });
+        document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
         
-        // Render page content
         switch (page) {
-            case 'orders':
-                this.renderOrdersPage();
-                break;
-            case 'history':
-                this.renderHistoryPage();
-                break;
-            case 'profile':
-                this.renderProfilePage();
-                break;
+            case 'orders': this.renderOrdersPage(); break;
+            case 'history': this.renderHistoryPage(); break;
+            case 'profile': this.renderProfilePage(); break;
         }
     },
     
-    // Go back
     goBack() {
-        if (this.state.currentPage === 'category') {
-            this.showPage('home');
-        } else {
-            this.showPage('home');
-        }
+        this.showPage('home');
     },
     
-    // ===== ORDERS PAGE =====
+    // ===== ORDERS PAGE (UPDATED for G2Bulk statuses) =====
     
     async renderOrdersPage() {
         const ordersList = document.getElementById('orders-list');
@@ -718,17 +954,10 @@ const App = {
         Utils.showLoading('Loading orders...');
         
         try {
-            // Refresh orders from database
             this.state.orders = await Database.getOrdersByUser(this.state.user.telegramId);
             
             if (this.state.orders.length === 0) {
-                ordersList.innerHTML = `
-                    <div class="empty-state">
-                        <i class="fas fa-shopping-bag"></i>
-                        <p>No orders yet</p>
-                        <small>Your orders will appear here</small>
-                    </div>
-                `;
+                ordersList.innerHTML = `<div class="empty-state"><i class="fas fa-shopping-bag"></i><p>No orders yet</p><small>Your orders will appear here</small></div>`;
             } else {
                 ordersList.innerHTML = this.state.orders.map(order => `
                     <div class="order-card">
@@ -742,43 +971,50 @@ const App = {
                                 <p>${order.categoryName || ''}</p>
                             </div>
                         </div>
+                        ${order.apiOrderId ? `
+                            <div class="order-api-info">
+                                <span class="api-badge"><i class="fas fa-bolt"></i> API Order: #${order.apiOrderId}</span>
+                                ${order.apiStatus ? `<span class="api-status ${order.apiStatus.toLowerCase().replace(/\s/g,'-')}">${order.apiStatus}</span>` : ''}
+                            </div>
+                        ` : ''}
                         ${order.inputValues && Object.keys(order.inputValues).length > 0 ? `
                             <div class="order-inputs">
-                                ${Object.entries(order.inputValues).map(([k, v]) => `
-                                    <span class="input-tag">${k}: ${v}</span>
-                                `).join('')}
+                                ${Object.entries(order.inputValues).map(([k, v]) => `<span class="input-tag">${k}: ${v}</span>`).join('')}
+                            </div>
+                        ` : ''}
+                        ${order.refundedAt ? `
+                            <div class="order-refund">
+                                <i class="fas fa-undo"></i> Refunded: ${Utils.formatCurrency(order.refundAmount || order.amount, order.currency)}
                             </div>
                         ` : ''}
                         <div class="order-footer">
-                            <span class="order-date">
-                                <i class="fas fa-clock"></i>
-                                ${Utils.formatDate(order.createdAt)}
-                            </span>
+                            <span class="order-date"><i class="fas fa-clock"></i> ${Utils.formatDate(order.createdAt)}</span>
                             <span class="order-price">${Utils.formatCurrency(order.amount, order.currency)}</span>
                         </div>
                     </div>
                 `).join('');
             }
         } catch (error) {
-            console.error('Render orders error:', error);
-            ordersList.innerHTML = `
-                <div class="empty-state">
-                    <i class="fas fa-exclamation-circle"></i>
-                    <p>Failed to load orders</p>
-                </div>
-            `;
+            ordersList.innerHTML = `<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Failed to load orders</p></div>`;
         } finally {
             Utils.hideLoading();
         }
     },
     
+    // UPDATED: Status text mapping
     getStatusText(status) {
-        switch (status) {
-            case 'pending': return 'Pending';
-            case 'approved': return 'Completed';
-            case 'rejected': return 'Rejected';
-            default: return status;
-        }
+        const map = {
+            'pending': '⏳ Pending',
+            'processing': '🔄 Processing',
+            'completed': '✅ Completed',
+            'failed': '❌ Failed',
+            'queued': '📋 Queued',
+            'partial': '⚠️ Partial',
+            'canceled': '🚫 Canceled',
+            'approved': '✅ Completed',
+            'rejected': '❌ Rejected'
+        };
+        return map[status] || status;
     },
     
     // ===== HISTORY PAGE =====
@@ -786,11 +1022,9 @@ const App = {
     async renderHistoryPage(filter = 'all') {
         const historyList = document.getElementById('history-list');
         if (!historyList) return;
-        
         Utils.showLoading('Loading history...');
         
         try {
-            // Refresh data
             const [orders, topups] = await Promise.all([
                 Database.getOrdersByUser(this.state.user.telegramId),
                 Database.getTopupsByUser(this.state.user.telegramId)
@@ -799,58 +1033,43 @@ const App = {
             this.state.orders = orders;
             this.state.topups = topups;
             
-            // Build history items
-            let historyItems = [];
+            let items = [];
             
-            // Add approved topups
             if (filter === 'all' || filter === 'topup') {
-                const approvedTopups = this.state.topups.filter(t => t.status === 'approved');
-                approvedTopups.forEach(topup => {
-                    historyItems.push({
-                        type: 'topup',
-                        amount: topup.amount,
+                this.state.topups.filter(t => t.status === 'approved').forEach(topup => {
+                    items.push({
+                        type: 'topup', amount: topup.amount,
                         description: `Top-up via ${topup.paymentMethod}`,
-                        date: topup.processedAt || topup.createdAt,
-                        status: 'approved'
+                        date: topup.processedAt || topup.createdAt, status: 'approved'
                     });
                 });
             }
             
-            // Add approved/rejected orders
             if (filter === 'all' || filter === 'purchase') {
-                const processedOrders = this.state.orders.filter(o => o.status !== 'pending');
-                processedOrders.forEach(order => {
-                    historyItems.push({
-                        type: 'purchase',
-                        amount: order.amount,
+                this.state.orders.filter(o => o.status !== 'pending' && o.status !== 'processing' && o.status !== 'queued').forEach(order => {
+                    items.push({
+                        type: 'purchase', amount: order.amount,
                         description: order.productName,
-                        date: order.processedAt || order.createdAt,
+                        date: order.completedAt || order.processedAt || order.createdAt,
                         status: order.status,
-                        refunded: order.status === 'rejected'
+                        refunded: order.status === 'failed' || order.status === 'rejected' || order.status === 'canceled'
                     });
                 });
             }
             
-            // Sort by date
-            historyItems.sort((a, b) => new Date(b.date) - new Date(a.date));
+            items.sort((a, b) => new Date(b.date) - new Date(a.date));
             
-            if (historyItems.length === 0) {
-                historyList.innerHTML = `
-                    <div class="empty-state">
-                        <i class="fas fa-history"></i>
-                        <p>No transaction history</p>
-                        <small>Your transactions will appear here</small>
-                    </div>
-                `;
+            if (items.length === 0) {
+                historyList.innerHTML = `<div class="empty-state"><i class="fas fa-history"></i><p>No transaction history</p></div>`;
             } else {
-                historyList.innerHTML = historyItems.map(item => `
+                historyList.innerHTML = items.map(item => `
                     <div class="history-item">
                         <div class="history-icon ${item.type}">
                             <i class="fas fa-${item.type === 'topup' ? 'plus' : (item.refunded ? 'undo' : 'shopping-cart')}"></i>
                         </div>
                         <div class="history-info">
                             <h4>${item.description}</h4>
-                            <p>${item.type === 'topup' ? 'Balance Top-up' : (item.refunded ? 'Order Refunded' : 'Purchase')}</p>
+                            <p>${item.type === 'topup' ? 'Balance Top-up' : (item.refunded ? 'Refunded' : 'Purchase')}</p>
                         </div>
                         <div class="history-amount">
                             <span class="amount ${item.type === 'topup' || item.refunded ? 'positive' : 'negative'}">
@@ -862,126 +1081,67 @@ const App = {
                 `).join('');
             }
         } catch (error) {
-            console.error('Render history error:', error);
-            historyList.innerHTML = `
-                <div class="empty-state">
-                    <i class="fas fa-exclamation-circle"></i>
-                    <p>Failed to load history</p>
-                </div>
-            `;
+            historyList.innerHTML = `<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Failed to load history</p></div>`;
         } finally {
             Utils.hideLoading();
         }
     },
     
     showHistoryTab(filter) {
-        // Update tab buttons
-        document.querySelectorAll('.history-tabs .tab-btn').forEach(btn => {
-            btn.classList.remove('active');
-        });
+        document.querySelectorAll('.history-tabs .tab-btn').forEach(b => b.classList.remove('active'));
         event.target.classList.add('active');
-        
         this.renderHistoryPage(filter);
     },
     
     // ===== PROFILE PAGE =====
     
     async renderProfilePage() {
-        // Refresh user data
         try {
             const freshUser = await Database.getUserByTelegramId(this.state.user.telegramId);
-            if (freshUser) {
-                this.state.user = freshUser;
-            }
-        } catch (e) {
-            console.warn('Could not refresh user data');
-        }
+            if (freshUser) this.state.user = freshUser;
+        } catch (e) {}
         
         const user = this.state.user;
         
-        // Update profile elements
-        const profileAvatar = document.getElementById('profile-avatar');
-        const profileName = document.getElementById('profile-name');
-        const profileId = document.getElementById('profile-id');
-        const premiumBadge = document.getElementById('premium-badge');
-        const totalOrders = document.getElementById('total-orders');
-        const approvedOrders = document.getElementById('approved-orders');
-        const totalSpent = document.getElementById('total-spent');
+        const pa = document.getElementById('profile-avatar');
+        if (pa) pa.src = user.photoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.firstName || 'U')}&background=8b5cf6&color=fff&size=150`;
         
-        // Avatar
-        if (profileAvatar) {
-            if (user.photoUrl) {
-                profileAvatar.src = user.photoUrl;
-            } else {
-                profileAvatar.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.firstName || 'U')}&background=8b5cf6&color=fff&size=150`;
-            }
-        }
+        const pn = document.getElementById('profile-name');
+        if (pn) pn.textContent = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'User';
         
-        // Name
-        if (profileName) {
-            profileName.textContent = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'User';
-        }
+        const pi = document.getElementById('profile-id');
+        if (pi) pi.textContent = user.username ? `@${user.username}` : `ID: ${user.telegramId}`;
         
-        // Username/ID
-        if (profileId) {
-            profileId.textContent = user.username ? `@${user.username}` : `ID: ${user.telegramId}`;
-        }
+        const pb = document.getElementById('premium-badge');
+        if (pb) pb.classList.toggle('hidden', !user.isPremium);
         
-        // Premium badge
-        if (premiumBadge) {
-            if (user.isPremium) {
-                premiumBadge.classList.remove('hidden');
-            } else {
-                premiumBadge.classList.add('hidden');
-            }
-        }
+        const to = document.getElementById('total-orders');
+        if (to) to.textContent = user.totalOrders || 0;
         
-        // Stats
-        if (totalOrders) {
-            totalOrders.textContent = user.totalOrders || 0;
-        }
-        if (approvedOrders) {
-            approvedOrders.textContent = user.approvedOrders || 0;
-        }
-        if (totalSpent) {
-            totalSpent.textContent = this.formatNumber(user.totalSpent || 0);
-        }
+        const ao = document.getElementById('approved-orders');
+        if (ao) ao.textContent = user.approvedOrders || 0;
         
-        // Update theme toggle
-        const themeToggle = document.getElementById('theme-toggle');
-        if (themeToggle) {
-            const currentTheme = document.documentElement.getAttribute('data-theme');
-            themeToggle.classList.toggle('active', currentTheme === 'dark');
-        }
+        const ts = document.getElementById('total-spent');
+        if (ts) ts.textContent = this.formatNumber(user.totalSpent || 0);
+        
+        const tt = document.getElementById('theme-toggle');
+        if (tt) tt.classList.toggle('active', document.documentElement.getAttribute('data-theme') === 'dark');
     },
-    
-    // ===== NOTIFICATIONS =====
     
     showNotificationSettings() {
         TelegramApp.showAlert('Notifications are enabled by default. You will receive updates about your orders via Telegram.');
     },
     
-    // ===== SUPPORT =====
-    
     showSupport() {
-        const supportUsername = CONFIG.ADMIN_USERNAME || 'OPPER101';
-        TelegramApp.openTelegramLink(`https://t.me/${supportUsername}`);
+        TelegramApp.openTelegramLink(`https://t.me/${CONFIG.ADMIN_USERNAME || 'OPPER101'}`);
     },
     
-    // ===== SETUP EVENT LISTENERS =====
-    
     setupEventListeners() {
-        // Back button
-        window.onBackButtonClick = () => {
-            this.goBack();
-        };
-        
-        // Theme toggle
+        window.onBackButtonClick = () => this.goBack();
         const savedTheme = Utils.storage.get('theme', CONFIG.DEFAULT_THEME);
         document.documentElement.setAttribute('data-theme', savedTheme);
     },
     
-    // Refresh user data
     async refreshUserData() {
         try {
             this.state.user = await Database.getUserByTelegramId(TelegramApp.getUserId());
@@ -995,27 +1155,14 @@ const App = {
 
 // ===== Global Functions =====
 
-function showPage(page) {
-    App.showPage(page);
-}
-
-function goBack() {
-    App.goBack();
-}
-
-function openTopupModal() {
-    openTopupModalHandler();
-}
-
-function closeTopupModal() {
-    document.getElementById('topup-modal').classList.add('hidden');
-}
+function showPage(page) { App.showPage(page); }
+function goBack() { App.goBack(); }
+function openTopupModal() { openTopupModalHandler(); }
+function closeTopupModal() { document.getElementById('topup-modal').classList.add('hidden'); }
 
 function setAmount(amount) {
     document.getElementById('topup-amount').value = amount;
-    document.querySelectorAll('.quick-amounts button').forEach(btn => {
-        btn.classList.remove('active');
-    });
+    document.querySelectorAll('.quick-amounts button').forEach(b => b.classList.remove('active'));
     event.target.classList.add('active');
 }
 
@@ -1023,25 +1170,19 @@ async function openTopupModalHandler() {
     const modal = document.getElementById('topup-modal');
     const paymentMethods = document.getElementById('payment-methods');
     
-    // Load payment methods
     const payments = await Database.getPaymentMethods();
     App.state.payments = payments;
     
     if (payments.length === 0) {
-        paymentMethods.innerHTML = `
-            <p style="text-align:center; color: var(--text-secondary);">No payment methods available</p>
-        `;
+        paymentMethods.innerHTML = `<p style="text-align:center;color:var(--text-secondary);">No payment methods available</p>`;
     } else {
-        paymentMethods.innerHTML = `
-            <h4>Select Payment Method</h4>
-            ${payments.map(payment => `
-                <div class="payment-method-item" onclick="selectPayment('${payment.id}')">
-                    <img src="${payment.icon}" alt="${payment.name}" class="payment-icon">
-                    <span class="payment-name">${payment.name}</span>
-                    <i class="fas fa-chevron-right"></i>
-                </div>
-            `).join('')}
-        `;
+        paymentMethods.innerHTML = `<h4>Select Payment Method</h4>${payments.map(p => `
+            <div class="payment-method-item" onclick="selectPayment('${p.id}')">
+                <img src="${p.icon}" alt="${p.name}" class="payment-icon">
+                <span class="payment-name">${p.name}</span>
+                <i class="fas fa-chevron-right"></i>
+            </div>
+        `).join('')}`;
     }
     
     modal.classList.remove('hidden');
@@ -1050,14 +1191,12 @@ async function openTopupModalHandler() {
 function selectPayment(paymentId) {
     const payment = App.state.payments.find(p => p.id === paymentId);
     App.state.selectedPayment = payment;
-    
     closeTopupModal();
     openPaymentDetails(payment);
 }
 
 function openPaymentDetails(payment) {
     const amount = document.getElementById('topup-amount').value;
-    
     if (!amount || parseInt(amount) < 1000) {
         Utils.showToast('Please enter a valid amount (min 1000 MMK)', 'warning');
         document.getElementById('topup-modal').classList.remove('hidden');
@@ -1065,36 +1204,17 @@ function openPaymentDetails(payment) {
     }
     
     App.state.topupAmount = parseInt(amount);
-    
     const modal = document.getElementById('payment-details-modal');
     const paymentInfo = document.getElementById('payment-info');
     
     paymentInfo.innerHTML = `
-        <div class="payment-detail-card">
-            <img src="${payment.icon}" alt="${payment.name}" style="width:60px;height:60px;border-radius:12px;">
-            <h4>${payment.name}</h4>
+        <div class="payment-detail-card"><img src="${payment.icon}" alt="${payment.name}" style="width:60px;height:60px;border-radius:12px;"><h4>${payment.name}</h4></div>
+        <div class="payment-detail-item"><span>Amount to Pay:</span><strong>${Utils.formatCurrency(App.state.topupAmount, 'MMK')}</strong></div>
+        <div class="payment-detail-item"><span>Account Number:</span><strong>${payment.address}</strong>
+            <button onclick="Utils.copyToClipboard('${payment.address}')" style="margin-left:8px;background:var(--gradient-glow);border:none;padding:5px 10px;border-radius:8px;cursor:pointer;"><i class="fas fa-copy"></i></button>
         </div>
-        <div class="payment-detail-item">
-            <span>Amount to Pay:</span>
-            <strong>${Utils.formatCurrency(App.state.topupAmount, 'MMK')}</strong>
-        </div>
-        <div class="payment-detail-item">
-            <span>Account Number:</span>
-            <strong>${payment.address}</strong>
-            <button onclick="Utils.copyToClipboard('${payment.address}')" style="margin-left:8px;background:var(--gradient-glow);border:none;padding:5px 10px;border-radius:8px;cursor:pointer;">
-                <i class="fas fa-copy"></i>
-            </button>
-        </div>
-        <div class="payment-detail-item">
-            <span>Account Name:</span>
-            <strong>${payment.accountName}</strong>
-        </div>
-        ${payment.note ? `
-            <div class="payment-note">
-                <i class="fas fa-info-circle"></i>
-                <span>${payment.note}</span>
-            </div>
-        ` : ''}
+        <div class="payment-detail-item"><span>Account Name:</span><strong>${payment.accountName}</strong></div>
+        ${payment.note ? `<div class="payment-note"><i class="fas fa-info-circle"></i><span>${payment.note}</span></div>` : ''}
     `;
     
     modal.classList.remove('hidden');
@@ -1108,54 +1228,33 @@ function closePaymentDetails() {
     App.state.proofImage = null;
 }
 
-function triggerUpload() {
-    document.getElementById('payment-proof').click();
-}
+function triggerUpload() { document.getElementById('payment-proof').click(); }
 
 async function handleProofUpload(event) {
     const file = event.target.files[0];
-    if (!file) return;
-    
-    // Check if file is an image
-    if (!file.type.startsWith('image/')) {
+    if (!file || !file.type.startsWith('image/')) {
         Utils.showToast('Please select an image file', 'warning');
         return;
     }
     
     Utils.showLoading('Uploading image...');
-    
     try {
-        // Upload to ImgBB (free image hosting - no size limit)
         const formData = new FormData();
         formData.append('image', file);
-        
-        const IMGBB_API_KEY = 'd3b0e9fd43ff0eb762987129a2f21e9c';
-        
-        const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
-            method: 'POST',
-            body: formData
-        });
-        
+        const response = await fetch(`https://api.imgbb.com/1/upload?key=d3b0e9fd43ff0eb762987129a2f21e9c`, { method: 'POST', body: formData });
         const result = await response.json();
         
         if (result.success) {
-            // Save image URL (not base64)
             App.state.proofImage = result.data.url;
-            
-            // Show preview
             document.getElementById('proof-image').src = result.data.url;
             document.getElementById('proof-preview').classList.remove('hidden');
             document.getElementById('upload-area').classList.add('hidden');
             document.getElementById('submit-topup-btn').disabled = false;
-            
-            console.log('✅ Image uploaded successfully:', result.data.url);
         } else {
             throw new Error(result.error?.message || 'Upload failed');
         }
-        
     } catch (error) {
-        console.error('Image upload error:', error);
-        Utils.showToast('Failed to upload image. Please try again.', 'error');
+        Utils.showToast('Failed to upload image', 'error');
     } finally {
         Utils.hideLoading();
     }
@@ -1187,249 +1286,58 @@ async function submitTopup() {
             proofImage: App.state.proofImage
         });
         
-        // Notify admin
         await TelegramBot.notifyNewTopup(topup, App.state.user);
-        
-        // Add to local state
         App.state.topups.unshift(topup);
-        
         closePaymentDetails();
         Utils.showToast('Top-up request submitted!', 'success');
-        
-        // Reset
         App.state.proofImage = null;
         App.state.selectedPayment = null;
         App.state.topupAmount = 0;
-        
     } catch (error) {
-        console.error('Submit topup error:', error);
         Utils.showToast('Failed to submit request', 'error');
     } finally {
         Utils.hideLoading();
     }
 }
 
-function closeBuyModal() {
-    App.closeBuyModal();
-}
-
-function confirmPurchase() {
-    App.confirmPurchase();
-}
-
-function sendOTP() {
-    App.sendOTP();
-}
+function closeBuyModal() { App.closeBuyModal(); }
+function confirmPurchase() { App.confirmPurchase(); }
+function sendOTP() { App.sendOTP(); }
 
 function toggleTheme() {
-    const toggle = document.getElementById('theme-toggle');
     const currentTheme = document.documentElement.getAttribute('data-theme');
     const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    
     document.documentElement.setAttribute('data-theme', newTheme);
-    if (toggle) {
-        toggle.classList.toggle('active');
-    }
+    document.getElementById('theme-toggle')?.classList.toggle('active');
     Utils.storage.set('theme', newTheme);
-    
     TelegramApp.hapticFeedback('impact', 'light');
 }
 
-function openAdminPanel() {
-    window.location.href = 'admin.html';
-}
+function openAdminPanel() { window.location.href = 'admin.html'; }
 
 function shareCategory() {
     if (App.state.currentCategory) {
-        const shareText = `Check out ${App.state.currentCategory.name} on our Game Shop!`;
-        TelegramApp.shareUrl(`https://t.me/${CONFIG.BOT_USERNAME}`, shareText);
+        TelegramApp.shareUrl(`https://t.me/${CONFIG.BOT_USERNAME}`, `Check out ${App.state.currentCategory.name} on our Game Shop!`);
     }
 }
 
-function showHistoryTab(filter) {
-    App.showHistoryTab(filter);
-}
-
-function showNotificationSettings() {
-    App.showNotificationSettings();
-}
-
-function showSupport() {
-    App.showSupport();
-}
+function showHistoryTab(filter) { App.showHistoryTab(filter); }
+function showNotificationSettings() { App.showNotificationSettings(); }
+function showSupport() { App.showSupport(); }
 
 // ===== Custom Emoji Renderer =====
-
 function renderCustomEmojis(text) {
-    if (!text || !App.state.customEmojis || App.state.customEmojis.length === 0) {
-        return text;
-    }
-    
+    if (!text || !App.state.customEmojis?.length) return text;
     let result = text;
-    
     App.state.customEmojis.forEach(emoji => {
-        // Escape special regex characters in trigger
-        const escapedTrigger = emoji.trigger.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp(escapedTrigger, 'g');
-        const replacement = `<img class="custom-emoji" src="${emoji.imageUrl}" alt="${emoji.name || 'emoji'}">`;
-        result = result.replace(regex, replacement);
+        const escaped = emoji.trigger.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        result = result.replace(new RegExp(escaped, 'g'), `<img class="custom-emoji" src="${emoji.imageUrl}" alt="${emoji.name || 'emoji'}">`);
     });
-    
     return result;
 }
-
 window.renderCustomEmojis = renderCustomEmojis;
 
-
-// ===== Initialize App =====
-// ===== G2Bulk Reseller API Integration =====
-const G2BulkAPI = {
-    URL: 'https://api.g2bulk.com/api/v2',
-    KEY: '49d362166965e9d793931148a7aba193e0200fbd42c6b7fb1aff4047b4cc0cc2',
-    
-    async request(action, params = {}) {
-        try {
-            console.log('📡 G2Bulk API:', action, params);
-            
-            const response = await fetch(this.URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ key: this.KEY, action, ...params })
-            });
-            
-            return await response.json();
-        } catch (error) {
-            console.error('❌ G2Bulk API Error:', error);
-            throw error;
-        }
-    },
-    
-    async getServices() {
-        return await this.request('services');
-    },
-
-     async getServicesByCategory(category) {
-         return await this.request('services', { category });
-    },
-    
-    async placeOrder(serviceId, link, quantity = 1) {
-        return await this.request('add', {
-            service: serviceId,
-            link: link,
-            quantity: quantity
-        });
-    },
-    
-    async checkStatus(orderId) {
-        return await this.request('status', { order: orderId });
-    },
-    
-    async getBalance() {
-        return await this.request('balance');
-    }
-};
-
-window.G2BulkAPI = G2BulkAPI;
-
-// ===== Auto Top-Up System =====
-const AutoTopUp = {
-    async processApprovedOrders() {
-        try {
-            if (!App.state.user) return;
-            
-            const orders = await Database.getOrdersByUser(App.state.user.telegramId);
-            
-            for (const order of orders) {
-                if (order.status === 'approved' && !order.apiProcessed) {
-                    await this.processOrder(order);
-                }
-            }
-        } catch (error) {
-            console.error('Auto top-up error:', error);
-        }
-    },
-    
-    async processOrder(order) {
-        try {
-            console.log('🎮 Processing order:', order.orderId);
-            
-            const product = await Database.getProductById(order.productId);
-            
-            if (!product || !product.serviceId) {
-                console.log('ℹ️ No service ID, manual processing');
-                return;
-            }
-            
-            const inputValues = order.inputValues || {};
-            let playerId = '';
-            let zoneId = '';
-            
-            const playerKeys = ['Player ID', 'PlayerID', 'User ID', 'Game ID', 'ID'];
-            const zoneKeys = ['Zone ID', 'ZoneID', 'Server ID', 'Server'];
-            
-            for (const key of playerKeys) {
-                if (inputValues[key]) { playerId = inputValues[key]; break; }
-            }
-            
-            for (const key of zoneKeys) {
-                if (inputValues[key]) { zoneId = inputValues[key]; break; }
-            }
-            
-            if (!playerId) {
-                const values = Object.values(inputValues);
-                if (values.length > 0) playerId = values[0];
-                if (values.length > 1) zoneId = values[1];
-            }
-            
-            const link = zoneId ? `${playerId}|${zoneId}` : playerId;
-            
-            if (!link) {
-                console.log('⚠️ No player ID found');
-                return;
-            }
-            
-            console.log('📤 G2Bulk API: Service', product.serviceId, 'Link:', link);
-            
-            const apiResult = await G2BulkAPI.placeOrder(product.serviceId, link, 1);
-            
-            if (apiResult && apiResult.order) {
-                console.log('✅ G2Bulk order:', apiResult.order);
-                await this.markOrderProcessed(order.id, apiResult.order);
-            } else if (apiResult && apiResult.error) {
-                console.error('❌ G2Bulk error:', apiResult.error);
-            }
-        } catch (error) {
-            console.error('Process order error:', error);
-        }
-    },
-    
-    async markOrderProcessed(orderId, apiOrderId) {
-        try {
-            const data = await Database.read(Database.bins.ORDERS, false);
-            const orders = data?.orders || [];
-            
-            const index = orders.findIndex(o => o.id === orderId);
-            if (index !== -1) {
-                orders[index].apiProcessed = true;
-                orders[index].apiOrderId = apiOrderId;
-                orders[index].apiProcessedAt = new Date().toISOString();
-                await Database.update(Database.bins.ORDERS, { orders });
-            }
-        } catch (error) {
-            console.error('Mark order error:', error);
-        }
-    },
-    
-    startAutoCheck() {
-        setInterval(() => this.processApprovedOrders(), 30000);
-        this.processApprovedOrders();
-        console.log('🚀 Auto Top-Up started');
-    }
-};
-
-window.AutoTopUp = AutoTopUp;
-
-// ===== Initialize App =====
+// ===== Initialize =====
 document.addEventListener('DOMContentLoaded', () => {
     App.init();
 });
