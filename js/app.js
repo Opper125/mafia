@@ -1,4 +1,4 @@
-// ===== Main Application - G2Bulk Integrated =====
+// ===== Main Application - G2Bulk Integrated + Enhanced Game ID Checker =====
 
 // ===== G2Bulk Reseller API =====
 const G2BulkAPI = {
@@ -53,11 +53,8 @@ const OrderChecker = {
     
     start() {
         console.log('🔄 OrderChecker started');
-        // Check processing orders
         this.checkInterval = setInterval(() => this.checkProcessingOrders(), CONFIG.G2BULK.ORDER_CHECK_INTERVAL);
-        // Retry queued orders
         this.queueInterval = setInterval(() => this.retryQueuedOrders(), CONFIG.G2BULK.QUEUE_RETRY_INTERVAL);
-        // Initial check
         setTimeout(() => {
             this.checkProcessingOrders();
             this.retryQueuedOrders();
@@ -69,7 +66,6 @@ const OrderChecker = {
         if (this.queueInterval) clearInterval(this.queueInterval);
     },
     
-    // Check all processing orders for current user
     async checkProcessingOrders() {
         if (this.isChecking || !App.state.user) return;
         this.isChecking = true;
@@ -82,7 +78,7 @@ const OrderChecker = {
             
             for (const order of processingOrders) {
                 await this.checkSingleOrder(order);
-                await new Promise(r => setTimeout(r, 1000)); // Rate limit
+                await new Promise(r => setTimeout(r, 1000));
             }
         } catch (error) {
             console.error('Check processing orders error:', error);
@@ -113,7 +109,6 @@ const OrderChecker = {
                     await TelegramBot.notifyOrderCompleted(order);
                     Utils.showToast(`✅ Order #${order.orderId} completed!`, 'success');
                     TelegramApp.hapticFeedback('notification', 'success');
-                    // Refresh user data
                     await App.refreshUserData();
                     break;
                     
@@ -143,7 +138,6 @@ const OrderChecker = {
                     Utils.showToast(`⚠️ Order #${order.orderId} partially completed`, 'warning');
                     break;
                     
-                // Processing, In progress, Pending - still working
                 default:
                     await Database.updateOrderApiStatus(order.id, {
                         apiStatus: apiStatus
@@ -155,7 +149,6 @@ const OrderChecker = {
         }
     },
     
-    // Retry queued orders (when API balance was insufficient)
     async retryQueuedOrders() {
         if (!App.state.user) return;
         
@@ -167,7 +160,6 @@ const OrderChecker = {
             
             if (userQueuedOrders.length === 0) return;
             
-            // Check API balance first
             const balanceResult = await G2BulkAPI.getBalance();
             if (!balanceResult || !balanceResult.balance || parseFloat(balanceResult.balance) <= 0) {
                 console.log('⏳ API balance still insufficient for queued orders');
@@ -178,7 +170,6 @@ const OrderChecker = {
             
             for (const order of userQueuedOrders) {
                 if ((order.retriedCount || 0) >= CONFIG.G2BULK.MAX_RETRY_ATTEMPTS) {
-                    // Max retries exceeded - refund and fail
                     await Database.updateOrderApiStatus(order.id, {
                         apiStatus: 'Failed',
                         status: 'failed',
@@ -188,7 +179,6 @@ const OrderChecker = {
                     continue;
                 }
                 
-                // Retry placing order
                 try {
                     const apiResult = await G2BulkAPI.placeOrder(order.serviceId, order.link, 1);
                     
@@ -203,7 +193,6 @@ const OrderChecker = {
                     } else if (apiResult && apiResult.error) {
                         await Database.incrementOrderRetry(order.id);
                         if (!G2BulkAPI.isBalanceError(apiResult.error)) {
-                            // Non-balance error - refund
                             await Database.updateOrderApiStatus(order.id, {
                                 apiStatus: 'Failed',
                                 status: 'failed',
@@ -217,7 +206,7 @@ const OrderChecker = {
                     await Database.incrementOrderRetry(order.id);
                 }
                 
-                await new Promise(r => setTimeout(r, 2000)); // Rate limit
+                await new Promise(r => setTimeout(r, 2000));
             }
         } catch (error) {
             console.error('Retry queued orders error:', error);
@@ -226,50 +215,238 @@ const OrderChecker = {
 };
 window.OrderChecker = OrderChecker;
 
-// ===== Game ID Checker =====
+// ===== Enhanced Game ID Checker (supports RapidAPI JSON Config) =====
 const GameIdChecker = {
-    async check(checkerConfig, value) {
-        if (!checkerConfig || !checkerConfig.apiUrl) return null;
+    debounceTimers: {},
+    
+    /**
+     * Check Game ID using checker config
+     * Supports both NEW format (single JSON) and OLD format (separate fields)
+     * 
+     * NEW JSON Config Format:
+     * {
+     *   "url": "https://check-id-game1.p.rapidapi.com/check-id-game",
+     *   "method": "POST",
+     *   "headers": {
+     *     "x-rapidapi-key": "YOUR_API_KEY",
+     *     "x-rapidapi-host": "check-id-game1.p.rapidapi.com",
+     *     "Content-Type": "application/json"
+     *   },
+     *   "body": {
+     *     "game": "mobile-legends",
+     *     "userid": "{{value}}",
+     *     "zoneid": "{{Zone ID}}"
+     *   },
+     *   "responsePath": {
+     *     "valid": "success",
+     *     "nickname": "data.username",
+     *     "country": "data.country"
+     *   },
+     *   "errorMessage": "Game ID not found!"
+     * }
+     */
+    async check(config, value, allInputValues = {}) {
+        if (!config) return null;
+        
+        // Support config as JSON string or object
+        if (typeof config === 'string') {
+            try { config = JSON.parse(config); } 
+            catch(e) { 
+                console.error('Invalid checker config JSON:', e); 
+                return null; 
+            }
+        }
+        
+        // Normalize - support both new format (url) and old format (apiUrl)
+        const url = config.url || config.apiUrl;
+        if (!url) return null;
+        
+        const method = (config.method || 'POST').toUpperCase();
+        const headers = config.headers || { 'Content-Type': 'application/json' };
         
         try {
-            let url = checkerConfig.apiUrl;
-            let options = {
-                method: checkerConfig.method || 'POST',
-                headers: checkerConfig.headers || { 'Content-Type': 'application/json' }
+            let fetchUrl = url;
+            let options = { method, headers: { ...headers } };
+            
+            // Safe value escaping for JSON
+            const safeEscape = (val) => {
+                return String(val || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
             };
             
-            if (options.method === 'POST' && checkerConfig.bodyTemplate) {
-                options.body = checkerConfig.bodyTemplate.replace(/\{\{value\}\}/g, value);
-            } else if (options.method === 'GET') {
-                url = url.replace(/\{\{value\}\}/g, encodeURIComponent(value));
+            if (method === 'POST') {
+                if (config.body) {
+                    // NEW format - body is an object with {{placeholders}}
+                    let bodyStr = JSON.stringify(config.body);
+                    
+                    // Replace {{value}} with current input value
+                    bodyStr = bodyStr.replace(/\{\{value\}\}/gi, safeEscape(value));
+                    
+                    // Replace {{InputName}} with other input values
+                    Object.entries(allInputValues).forEach(([name, val]) => {
+                        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        bodyStr = bodyStr.replace(
+                            new RegExp(`\\{\\{${escaped}\\}\\}`, 'g'), 
+                            safeEscape(val)
+                        );
+                    });
+                    
+                    options.body = bodyStr;
+                } else if (config.bodyTemplate) {
+                    // OLD format - bodyTemplate is a string
+                    options.body = config.bodyTemplate.replace(/\{\{value\}\}/gi, safeEscape(value));
+                }
+            } else if (method === 'GET') {
+                fetchUrl = fetchUrl.replace(/\{\{value\}\}/gi, encodeURIComponent(value));
+                // Replace named references in URL too
+                Object.entries(allInputValues).forEach(([name, val]) => {
+                    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    fetchUrl = fetchUrl.replace(
+                        new RegExp(`\\{\\{${escaped}\\}\\}`, 'g'),
+                        encodeURIComponent(val || '')
+                    );
+                });
             }
             
-            const response = await fetch(url, options);
+            console.log('🔍 Game ID Check Request:', fetchUrl);
+            const response = await fetch(fetchUrl, options);
             const data = await response.json();
+            console.log('🔍 Game ID Check Response:', data);
             
-            // Extract player name using dot notation path
-            const playerName = this.getNestedValue(data, checkerConfig.responseNamePath);
-            const isValid = checkerConfig.responseValidPath 
-                ? this.getNestedValue(data, checkerConfig.responseValidPath) 
-                : !!playerName;
+            // Extract response data
+            let isValid = false;
+            let nickname = null;
+            let country = null;
+            
+            if (config.responsePath || config.response) {
+                // NEW format
+                const rp = config.responsePath || config.response;
+                const validValue = rp.valid ? this.getNestedValue(data, rp.valid) : null;
+                nickname = rp.nickname ? this.getNestedValue(data, rp.nickname) : null;
+                country = rp.country ? this.getNestedValue(data, rp.country) : null;
+                
+                // Determine validity
+                if (validValue !== null && validValue !== undefined) {
+                    isValid = !!validValue;
+                } else {
+                    isValid = !!nickname;
+                }
+            } else {
+                // OLD format (backward compatibility)
+                nickname = config.responseNamePath ? this.getNestedValue(data, config.responseNamePath) : null;
+                const validValue = config.responseValidPath ? this.getNestedValue(data, config.responseValidPath) : null;
+                isValid = validValue !== null && validValue !== undefined ? !!validValue : !!nickname;
+                country = null;
+            }
             
             return {
                 valid: isValid,
-                playerName: playerName || null,
+                nickname: nickname || null,
+                playerName: nickname || null, // backward compatibility
+                country: country || null,
                 raw: data
             };
         } catch (error) {
             console.error('Game ID check error:', error);
-            return { valid: false, playerName: null, error: error.message };
+            return { valid: false, nickname: null, playerName: null, country: null, error: error.message };
         }
     },
     
     getNestedValue(obj, path) {
         if (!path) return null;
         return path.split('.').reduce((current, key) => current?.[key], obj);
+    },
+    
+    // Debounced auto-check
+    autoCheck(tableId, callback, delay = 800) {
+        if (this.debounceTimers[tableId]) {
+            clearTimeout(this.debounceTimers[tableId]);
+        }
+        this.debounceTimers[tableId] = setTimeout(callback, delay);
+    },
+    
+    // Extract required input names from body template (excluding {{value}})
+    getRequiredInputs(config) {
+        if (!config) return [];
+        if (typeof config === 'string') {
+            try { config = JSON.parse(config); } catch(e) { return []; }
+        }
+        if (!config.body) return [];
+        const bodyStr = JSON.stringify(config.body);
+        const matches = bodyStr.match(/\{\{([^}]+)\}\}/g) || [];
+        return matches
+            .map(m => m.replace(/\{\{|\}\}/g, ''))
+            .filter(name => name.toLowerCase() !== 'value');
     }
 };
 window.GameIdChecker = GameIdChecker;
+
+// ===== Country Display Helper =====
+const CountryHelper = {
+    countries: {
+        'AF': '🇦🇫 Afghanistan', 'AL': '🇦🇱 Albania', 'DZ': '🇩🇿 Algeria',
+        'AD': '🇦🇩 Andorra', 'AO': '🇦🇴 Angola', 'AR': '🇦🇷 Argentina',
+        'AM': '🇦🇲 Armenia', 'AU': '🇦🇺 Australia', 'AT': '🇦🇹 Austria',
+        'AZ': '🇦🇿 Azerbaijan', 'BH': '🇧🇭 Bahrain', 'BD': '🇧🇩 Bangladesh',
+        'BY': '🇧🇾 Belarus', 'BE': '🇧🇪 Belgium', 'BZ': '🇧🇿 Belize',
+        'BJ': '🇧🇯 Benin', 'BT': '🇧🇹 Bhutan', 'BO': '🇧🇴 Bolivia',
+        'BA': '🇧🇦 Bosnia', 'BW': '🇧🇼 Botswana', 'BR': '🇧🇷 Brazil',
+        'BN': '🇧🇳 Brunei', 'BG': '🇧🇬 Bulgaria', 'KH': '🇰🇭 Cambodia',
+        'CM': '🇨🇲 Cameroon', 'CA': '🇨🇦 Canada', 'CL': '🇨🇱 Chile',
+        'CN': '🇨🇳 China', 'CO': '🇨🇴 Colombia', 'CR': '🇨🇷 Costa Rica',
+        'HR': '🇭🇷 Croatia', 'CU': '🇨🇺 Cuba', 'CY': '🇨🇾 Cyprus',
+        'CZ': '🇨🇿 Czech Republic', 'DK': '🇩🇰 Denmark', 'DO': '🇩🇴 Dominican Republic',
+        'EC': '🇪🇨 Ecuador', 'EG': '🇪🇬 Egypt', 'SV': '🇸🇻 El Salvador',
+        'EE': '🇪🇪 Estonia', 'ET': '🇪🇹 Ethiopia', 'FI': '🇫🇮 Finland',
+        'FR': '🇫🇷 France', 'GE': '🇬🇪 Georgia', 'DE': '🇩🇪 Germany',
+        'GH': '🇬🇭 Ghana', 'GR': '🇬🇷 Greece', 'GT': '🇬🇹 Guatemala',
+        'HN': '🇭🇳 Honduras', 'HK': '🇭🇰 Hong Kong', 'HU': '🇭🇺 Hungary',
+        'IS': '🇮🇸 Iceland', 'IN': '🇮🇳 India', 'ID': '🇮🇩 Indonesia',
+        'IR': '🇮🇷 Iran', 'IQ': '🇮🇶 Iraq', 'IE': '🇮🇪 Ireland',
+        'IL': '🇮🇱 Israel', 'IT': '🇮🇹 Italy', 'JM': '🇯🇲 Jamaica',
+        'JP': '🇯🇵 Japan', 'JO': '🇯🇴 Jordan', 'KZ': '🇰🇿 Kazakhstan',
+        'KE': '🇰🇪 Kenya', 'KP': '🇰🇵 North Korea', 'KR': '🇰🇷 South Korea',
+        'KW': '🇰🇼 Kuwait', 'KG': '🇰🇬 Kyrgyzstan', 'LA': '🇱🇦 Laos',
+        'LV': '🇱🇻 Latvia', 'LB': '🇱🇧 Lebanon', 'LY': '🇱🇾 Libya',
+        'LT': '🇱🇹 Lithuania', 'LU': '🇱🇺 Luxembourg', 'MO': '🇲🇴 Macau',
+        'MG': '🇲🇬 Madagascar', 'MY': '🇲🇾 Malaysia', 'MV': '🇲🇻 Maldives',
+        'ML': '🇲🇱 Mali', 'MT': '🇲🇹 Malta', 'MX': '🇲🇽 Mexico',
+        'MD': '🇲🇩 Moldova', 'MN': '🇲🇳 Mongolia', 'ME': '🇲🇪 Montenegro',
+        'MA': '🇲🇦 Morocco', 'MZ': '🇲🇿 Mozambique', 'MM': '🇲🇲 Myanmar',
+        'NA': '🇳🇦 Namibia', 'NP': '🇳🇵 Nepal', 'NL': '🇳🇱 Netherlands',
+        'NZ': '🇳🇿 New Zealand', 'NI': '🇳🇮 Nicaragua', 'NE': '🇳🇪 Niger',
+        'NG': '🇳🇬 Nigeria', 'NO': '🇳🇴 Norway', 'OM': '🇴🇲 Oman',
+        'PK': '🇵🇰 Pakistan', 'PS': '🇵🇸 Palestine', 'PA': '🇵🇦 Panama',
+        'PY': '🇵🇾 Paraguay', 'PE': '🇵🇪 Peru', 'PH': '🇵🇭 Philippines',
+        'PL': '🇵🇱 Poland', 'PT': '🇵🇹 Portugal', 'QA': '🇶🇦 Qatar',
+        'RO': '🇷🇴 Romania', 'RU': '🇷🇺 Russia', 'RW': '🇷🇼 Rwanda',
+        'SA': '🇸🇦 Saudi Arabia', 'SN': '🇸🇳 Senegal', 'RS': '🇷🇸 Serbia',
+        'SG': '🇸🇬 Singapore', 'SK': '🇸🇰 Slovakia', 'SI': '🇸🇮 Slovenia',
+        'SO': '🇸🇴 Somalia', 'ZA': '🇿🇦 South Africa', 'ES': '🇪🇸 Spain',
+        'LK': '🇱🇰 Sri Lanka', 'SD': '🇸🇩 Sudan', 'SE': '🇸🇪 Sweden',
+        'CH': '🇨🇭 Switzerland', 'SY': '🇸🇾 Syria', 'TW': '🇹🇼 Taiwan',
+        'TJ': '🇹🇯 Tajikistan', 'TZ': '🇹🇿 Tanzania', 'TH': '🇹🇭 Thailand',
+        'TN': '🇹🇳 Tunisia', 'TR': '🇹🇷 Turkey', 'TM': '🇹🇲 Turkmenistan',
+        'UG': '🇺🇬 Uganda', 'UA': '🇺🇦 Ukraine', 'AE': '🇦🇪 UAE',
+        'GB': '🇬🇧 United Kingdom', 'US': '🇺🇸 United States', 'UY': '🇺🇾 Uruguay',
+        'UZ': '🇺🇿 Uzbekistan', 'VE': '🇻🇪 Venezuela', 'VN': '🇻🇳 Vietnam',
+        'YE': '🇾🇪 Yemen', 'ZM': '🇿🇲 Zambia', 'ZW': '🇿🇼 Zimbabwe'
+    },
+    
+    getDisplay(code) {
+        if (!code) return '';
+        code = String(code).toUpperCase().trim();
+        return this.countries[code] || `🌍 ${code}`;
+    },
+    
+    getFlag(code) {
+        if (!code) return '🌍';
+        code = String(code).toUpperCase().trim();
+        const display = this.countries[code];
+        if (display) return display.split(' ')[0];
+        return '🌍';
+    }
+};
+window.CountryHelper = CountryHelper;
 
 // ===== Main App =====
 const App = {
@@ -290,7 +467,8 @@ const App = {
         orders: [],
         topups: [],
         isLoading: false,
-        customEmojis: []
+        customEmojis: [],
+        checkerResults: {} // NEW: Store checker results per table
     },
     
     async init() {
@@ -327,7 +505,6 @@ const App = {
             this.hideIntro();
             TelegramApp.ready();
             
-            // Start order checker - NEW
             OrderChecker.start();
             
             console.log('✅ App initialized successfully!');
@@ -537,6 +714,7 @@ const App = {
             this.state.categoryBanners = categoryBanners;
             this.state.selectedProduct = null;
             this.state.inputValues = {};
+            this.state.checkerResults = {};
             
             this.renderCategoryPage();
             this.showPage('category');
@@ -549,7 +727,7 @@ const App = {
         }
     },
     
-    // UPDATED: Category page with Game ID checker
+    // UPDATED: Category page with Enhanced Game ID Checker
     renderCategoryPage() {
         const categoryTitle = document.getElementById('category-title');
         const inputSection = document.getElementById('input-section');
@@ -558,17 +736,17 @@ const App = {
         
         categoryTitle.textContent = this.state.currentCategory.name;
         
-        // Input tables with checker support
+        // Input tables with enhanced checker support
         if (this.state.inputTables?.length > 0) {
             inputSection.innerHTML = this.state.inputTables.map(table => `
-                <div class="input-group">
+                <div class="input-group" data-table-id="${table.id}">
                     <label>${table.name}</label>
                     <div class="input-with-checker">
                         <input type="text" 
                                id="input-${table.id}" 
                                placeholder="${table.placeholder}"
-                               onchange="App.updateInputValue('${table.id}', '${table.name}', this.value)"
-                               oninput="App.updateInputValue('${table.id}', '${table.name}', this.value)">
+                               oninput="App.onInputChange('${table.id}', '${table.name}', this.value)"
+                               autocomplete="off">
                         ${table.checkerEnabled ? `
                             <button class="checker-btn" onclick="App.checkGameId('${table.id}')" title="Verify ID">
                                 <i class="fas fa-search"></i>
@@ -621,42 +799,182 @@ const App = {
         this.updateBuyButton();
     },
     
-    // NEW: Game ID Checker
+    // NEW: Input change handler with auto-check
+    onInputChange(tableId, tableName, value) {
+        // Update stored value
+        this.state.inputValues[tableName] = value;
+        
+        // Find checker-enabled table in this category
+        const checkerTable = this.state.inputTables.find(t => t.checkerEnabled && t.checkerConfig);
+        if (!checkerTable) return;
+        
+        // Parse config to get required inputs
+        let config = checkerTable.checkerConfig;
+        if (typeof config === 'string') {
+            try { config = JSON.parse(config); } catch(e) { return; }
+        }
+        
+        // Get the main checker input value
+        const checkerInputEl = document.getElementById(`input-${checkerTable.id}`);
+        const checkerInputValue = checkerInputEl?.value?.trim();
+        if (!checkerInputValue) {
+            // Hide result if main input is empty
+            const resultDiv = document.getElementById(`checker-result-${checkerTable.id}`);
+            if (resultDiv) {
+                resultDiv.classList.add('hidden');
+                resultDiv.innerHTML = '';
+            }
+            return;
+        }
+        
+        // Check if all required additional inputs are filled
+        const requiredInputs = GameIdChecker.getRequiredInputs(config);
+        for (const reqInput of requiredInputs) {
+            if (!this.state.inputValues[reqInput]?.trim()) return;
+        }
+        
+        // All inputs filled - trigger auto-check with debounce
+        GameIdChecker.autoCheck(checkerTable.id, () => {
+            this.checkGameId(checkerTable.id);
+        }, 800);
+    },
+    
+    // COMPLETELY REWRITTEN: Enhanced Game ID Checker with rich results
     async checkGameId(tableId) {
         const table = this.state.inputTables.find(t => t.id === tableId);
         if (!table || !table.checkerEnabled || !table.checkerConfig) return;
         
         const input = document.getElementById(`input-${tableId}`);
         const resultDiv = document.getElementById(`checker-result-${tableId}`);
-        const value = input.value.trim();
+        const value = input?.value?.trim();
         
         if (!value) {
             Utils.showToast(`Please enter ${table.name}`, 'warning');
             return;
         }
         
-        resultDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Checking...';
+        // Show loading state
+        resultDiv.innerHTML = `
+            <div class="checker-card loading">
+                <div class="checker-loading-content">
+                    <div class="checker-spinner"></div>
+                    <span>Verifying Game ID...</span>
+                </div>
+            </div>
+        `;
         resultDiv.classList.remove('hidden');
-        resultDiv.className = 'checker-result checking';
+        resultDiv.className = 'checker-result show';
         
         try {
-            const result = await GameIdChecker.check(table.checkerConfig, value);
+            const result = await GameIdChecker.check(
+                table.checkerConfig, 
+                value, 
+                this.state.inputValues
+            );
             
             if (result && result.valid) {
-                resultDiv.innerHTML = `<i class="fas fa-check-circle"></i> ${result.playerName || 'Valid ID'}`;
-                resultDiv.className = 'checker-result valid';
+                // Store checker result
+                this.state.checkerResults[tableId] = result;
+                
+                let infoRows = '';
+                
+                // Nickname row
+                if (result.nickname) {
+                    infoRows += `
+                        <div class="checker-info-row">
+                            <div class="checker-info-icon"><i class="fas fa-gamepad"></i></div>
+                            <div class="checker-info-data">
+                                <span class="checker-info-label">Nickname</span>
+                                <strong class="checker-info-value nickname">${result.nickname}</strong>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // Country row
+                if (result.country) {
+                    infoRows += `
+                        <div class="checker-info-row">
+                            <div class="checker-info-icon"><i class="fas fa-globe-asia"></i></div>
+                            <div class="checker-info-data">
+                                <span class="checker-info-label">Country</span>
+                                <strong class="checker-info-value">${CountryHelper.getDisplay(result.country)}</strong>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // If no nickname or country, show generic valid message
+                if (!result.nickname && !result.country) {
+                    infoRows = `
+                        <div class="checker-info-row">
+                            <div class="checker-info-icon"><i class="fas fa-check"></i></div>
+                            <div class="checker-info-data">
+                                <strong class="checker-info-value">Valid Game ID</strong>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                resultDiv.innerHTML = `
+                    <div class="checker-card valid">
+                        <div class="checker-status-bar valid">
+                            <i class="fas fa-check-circle"></i>
+                            <span>Account Verified</span>
+                        </div>
+                        <div class="checker-info-body">
+                            ${infoRows}
+                        </div>
+                    </div>
+                `;
+                resultDiv.className = 'checker-result show valid';
                 TelegramApp.hapticFeedback('notification', 'success');
+                
             } else {
-                resultDiv.innerHTML = `<i class="fas fa-times-circle"></i> ${table.checkerConfig.errorMessage || 'Invalid ID'}`;
-                resultDiv.className = 'checker-result invalid';
+                // Invalid result
+                this.state.checkerResults[tableId] = null;
+                
+                let errorMsg = 'Invalid Game ID. Please check and try again.';
+                let config = table.checkerConfig;
+                if (typeof config === 'string') {
+                    try { config = JSON.parse(config); } catch(e) {}
+                }
+                if (config && config.errorMessage) {
+                    errorMsg = config.errorMessage;
+                }
+                
+                resultDiv.innerHTML = `
+                    <div class="checker-card invalid">
+                        <div class="checker-status-bar invalid">
+                            <i class="fas fa-times-circle"></i>
+                            <span>Account Not Found</span>
+                        </div>
+                        <div class="checker-error-body">
+                            <p>${errorMsg}</p>
+                        </div>
+                    </div>
+                `;
+                resultDiv.className = 'checker-result show invalid';
                 TelegramApp.hapticFeedback('notification', 'error');
             }
         } catch (error) {
-            resultDiv.innerHTML = `<i class="fas fa-exclamation-circle"></i> Check failed`;
-            resultDiv.className = 'checker-result error';
+            this.state.checkerResults[tableId] = null;
+            resultDiv.innerHTML = `
+                <div class="checker-card error">
+                    <div class="checker-status-bar error">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span>Verification Failed</span>
+                    </div>
+                    <div class="checker-error-body">
+                        <p>Unable to verify at this time. Please try again later.</p>
+                    </div>
+                </div>
+            `;
+            resultDiv.className = 'checker-result show error';
         }
     },
     
+    // Keep for backward compatibility
     updateInputValue(tableId, tableName, value) {
         this.state.inputValues[tableName] = value;
     },
@@ -718,6 +1036,17 @@ const App = {
         const balance = this.state.user.balance || 0;
         const remaining = balance - price;
         
+        // Build product summary with checker info
+        let checkerInfoHTML = '';
+        const checkerTable = this.state.inputTables.find(t => t.checkerEnabled);
+        if (checkerTable && this.state.checkerResults[checkerTable.id]) {
+            const cr = this.state.checkerResults[checkerTable.id];
+            checkerInfoHTML = `<div class="modal-checker-info">`;
+            if (cr.nickname) checkerInfoHTML += `<span class="modal-checker-tag"><i class="fas fa-gamepad"></i> ${cr.nickname}</span>`;
+            if (cr.country) checkerInfoHTML += `<span class="modal-checker-tag"><i class="fas fa-globe"></i> ${CountryHelper.getDisplay(cr.country)}</span>`;
+            checkerInfoHTML += `</div>`;
+        }
+        
         document.getElementById('product-summary').innerHTML = `
             <div class="product-summary-card">
                 <img src="${product.icon}" alt="${product.name}">
@@ -727,6 +1056,7 @@ const App = {
                     ${product.serviceId ? '<span class="auto-badge"><i class="fas fa-bolt"></i> Auto Delivery</span>' : ''}
                 </div>
             </div>
+            ${checkerInfoHTML}
         `;
         
         const inputSummary = document.getElementById('input-summary');
@@ -743,7 +1073,6 @@ const App = {
         document.getElementById('modal-remaining').textContent = Utils.formatCurrency(remaining, 'MMK');
         document.getElementById('modal-remaining').style.color = remaining >= 0 ? 'var(--success)' : 'var(--danger)';
         
-        // Hide verification section for auto orders
         const verificationSection = document.getElementById('verification-section');
         if (verificationSection) {
             verificationSection.classList.add('hidden');
@@ -757,12 +1086,10 @@ const App = {
         document.getElementById('verification-code').value = '';
     },
     
-    // COMPLETELY REWRITTEN: Auto purchase via G2Bulk API
     async confirmPurchase() {
         const product = this.state.selectedProduct;
         const price = product.discountedPrice || product.price;
         
-        // Check virtual balance
         if ((this.state.user.balance || 0) < price) {
             TelegramApp.hapticFeedback('notification', 'error');
             
@@ -786,14 +1113,11 @@ const App = {
         TelegramApp.hapticFeedback('impact', 'heavy');
         
         try {
-            // 1. Deduct virtual balance immediately
             await Database.updateUserBalance(this.state.user.telegramId, price, 'subtract');
             this.state.user.balance -= price;
             
-            // 2. Build game link from input values
             const link = this.buildGameLink(this.state.inputValues);
             
-            // 3. Create order record
             const order = await Database.createOrder({
                 userId: this.state.user.id,
                 telegramId: this.state.user.telegramId,
@@ -808,13 +1132,11 @@ const App = {
                 link: link
             });
             
-            // 4. Process via G2Bulk API if service ID exists
             if (product.serviceId) {
                 try {
                     const apiResult = await G2BulkAPI.placeOrder(product.serviceId, link, 1);
                     
                     if (apiResult && apiResult.order) {
-                        // ✅ API order placed successfully
                         await Database.updateOrderApiStatus(order.id, {
                             apiOrderId: apiResult.order,
                             apiStatus: 'Processing',
@@ -827,7 +1149,6 @@ const App = {
                         
                     } else if (apiResult && apiResult.error) {
                         if (G2BulkAPI.isBalanceError(apiResult.error)) {
-                            // ⏳ API balance insufficient - queue order
                             await Database.updateOrderApiStatus(order.id, {
                                 apiStatus: 'Queued',
                                 status: 'queued',
@@ -839,7 +1160,6 @@ const App = {
                             await TelegramBot.notifyOrderQueued(order, this.state.user);
                             
                         } else {
-                            // ❌ Other API error - refund user
                             await Database.updateUserBalance(this.state.user.telegramId, price, 'add');
                             this.state.user.balance += price;
                             
@@ -855,7 +1175,6 @@ const App = {
                         }
                     }
                 } catch (apiError) {
-                    // API call failed completely - refund
                     console.error('G2Bulk API call failed:', apiError);
                     await Database.updateUserBalance(this.state.user.telegramId, price, 'add');
                     this.state.user.balance += price;
@@ -870,19 +1189,17 @@ const App = {
                     Utils.showToast('❌ Connection error. Balance refunded.', 'error');
                 }
             } else {
-                // No service ID - manual processing (fallback)
                 this.closeBuyModal();
                 Utils.showToast('📦 Order placed! Awaiting processing.', 'success');
                 await TelegramBot.notifyNewOrder(order, this.state.user);
             }
             
-            // Update UI
             this.updateHeader();
             this.state.orders.unshift(order);
             
-            // Reset selection
             this.state.selectedProduct = null;
             this.state.inputValues = {};
+            this.state.checkerResults = {};
             this.renderCategoryPage();
             
         } catch (error) {
@@ -893,7 +1210,6 @@ const App = {
         }
     },
     
-    // NEW: Build game link from input values
     buildGameLink(inputValues) {
         const values = Object.values(inputValues).filter(v => v && v.trim());
         if (values.length === 0) return '';
@@ -945,7 +1261,7 @@ const App = {
         this.showPage('home');
     },
     
-    // ===== ORDERS PAGE (UPDATED for G2Bulk statuses) =====
+    // ===== ORDERS PAGE =====
     
     async renderOrdersPage() {
         const ordersList = document.getElementById('orders-list');
@@ -1001,7 +1317,6 @@ const App = {
         }
     },
     
-    // UPDATED: Status text mapping
     getStatusText(status) {
         const map = {
             'pending': '⏳ Pending',
