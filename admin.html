@@ -56,6 +56,11 @@
                     <i class="fas fa-box"></i>
                     <span>Products</span>
                 </a>
+                <!-- NEW: G2Bulk Services -->
+                <a class="nav-link" onclick="showAdminPage('g2bulk')">
+                    <i class="fas fa-cloud"></i>
+                    <span>G2Bulk Services</span>
+                </a>
                 <a class="nav-link" onclick="showAdminPage('banners')">
                     <i class="fas fa-image"></i>
                     <span>Banners</span>
@@ -80,7 +85,6 @@
                     <i class="fas fa-ban"></i>
                     <span>Banned Users</span>
                 </a>
-                <!-- Custom Emojis -->
                 <a class="nav-link" onclick="showAdminPage('emojis')">
                     <i class="fas fa-smile-wink"></i>
                     <span>Custom Emojis</span>
@@ -106,6 +110,19 @@
                         <span id="admin-time"></span>
                     </div>
                 </div>
+
+                <!-- G2Bulk API Balance - NEW -->
+                <div class="api-balance-bar" id="api-balance-bar">
+                    <div class="api-balance-icon"><i class="fas fa-cloud"></i></div>
+                    <div class="api-balance-info">
+                        <span class="api-label">G2Bulk API Balance</span>
+                        <span class="api-value" id="api-balance-value">Loading...</span>
+                    </div>
+                    <button class="api-refresh-btn" onclick="AdminApp.refreshApiBalance()">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+
                 <div class="stats-grid">
                     <div class="stat-card purple">
                         <div class="stat-icon"><i class="fas fa-users"></i></div>
@@ -135,19 +152,30 @@
                             <span class="stat-label">Pending Orders</span>
                         </div>
                     </div>
+                    <!-- NEW stats -->
+                    <div class="stat-card cyan">
+                        <div class="stat-icon"><i class="fas fa-bolt"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="stat-processing">0</span>
+                            <span class="stat-label">Processing</span>
+                        </div>
+                    </div>
+                    <div class="stat-card yellow">
+                        <div class="stat-icon"><i class="fas fa-list"></i></div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="stat-queued">0</span>
+                            <span class="stat-label">Queued</span>
+                        </div>
+                    </div>
                 </div>
                 <div class="dashboard-charts">
                     <div class="chart-card">
                         <h3>Recent Orders</h3>
-                        <div class="recent-orders-list" id="recent-orders">
-                            <!-- Recent orders will be loaded here -->
-                        </div>
+                        <div class="recent-orders-list" id="recent-orders"></div>
                     </div>
                     <div class="chart-card">
                         <h3>Recent Top-Ups</h3>
-                        <div class="recent-topups-list" id="recent-topups">
-                            <!-- Recent topups will be loaded here -->
-                        </div>
+                        <div class="recent-topups-list" id="recent-topups"></div>
                     </div>
                 </div>
             </div>
@@ -174,27 +202,25 @@
                                 <th>Actions</th>
                             </tr>
                         </thead>
-                        <tbody id="users-table-body">
-                            <!-- Users will be loaded here -->
-                        </tbody>
+                        <tbody id="users-table-body"></tbody>
                     </table>
                 </div>
             </div>
 
-            <!-- Orders Page -->
+            <!-- Orders Page (UPDATED) -->
             <div id="admin-page-orders" class="admin-page hidden">
                 <div class="page-header">
                     <h1><i class="fas fa-shopping-cart"></i> Orders Management</h1>
                     <div class="filter-tabs">
                         <button class="filter-btn active" onclick="filterOrders('all')">All</button>
                         <button class="filter-btn" onclick="filterOrders('pending')">Pending</button>
-                        <button class="filter-btn" onclick="filterOrders('approved')">Approved</button>
-                        <button class="filter-btn" onclick="filterOrders('rejected')">Rejected</button>
+                        <button class="filter-btn" onclick="filterOrders('processing')">Processing</button>
+                        <button class="filter-btn" onclick="filterOrders('queued')">Queued</button>
+                        <button class="filter-btn" onclick="filterOrders('completed')">Completed</button>
+                        <button class="filter-btn" onclick="filterOrders('failed')">Failed</button>
                     </div>
                 </div>
-                <div class="orders-list" id="admin-orders-list">
-                    <!-- Orders will be loaded here -->
-                </div>
+                <div class="orders-list" id="admin-orders-list"></div>
             </div>
 
             <!-- Top-Ups Page -->
@@ -208,9 +234,7 @@
                         <button class="filter-btn" onclick="filterTopups('rejected')">Rejected</button>
                     </div>
                 </div>
-                <div class="topups-list" id="admin-topups-list">
-                    <!-- Topups will be loaded here -->
-                </div>
+                <div class="topups-list" id="admin-topups-list"></div>
             </div>
 
             <!-- Categories Page -->
@@ -221,12 +245,10 @@
                         <i class="fas fa-plus"></i> Add Category
                     </button>
                 </div>
-                <div class="categories-list" id="admin-categories-list">
-                    <!-- Categories will be loaded here -->
-                </div>
+                <div class="categories-list" id="admin-categories-list"></div>
             </div>
 
-            <!-- Products Page -->
+            <!-- Products Page (UPDATED) -->
             <div id="admin-page-products" class="admin-page hidden">
                 <div class="page-header">
                     <h1><i class="fas fa-box"></i> Products</h1>
@@ -239,8 +261,49 @@
                         <option value="all">All Categories</option>
                     </select>
                 </div>
-                <div class="products-list" id="admin-products-list">
-                    <!-- Products will be loaded here -->
+                <div class="products-list" id="admin-products-list"></div>
+            </div>
+
+            <!-- NEW: G2Bulk Services Page -->
+            <div id="admin-page-g2bulk" class="admin-page hidden">
+                <div class="page-header">
+                    <h1><i class="fas fa-cloud"></i> G2Bulk Services</h1>
+                    <div class="header-actions">
+                        <button class="add-btn" onclick="AdminApp.refreshG2BulkServices()">
+                            <i class="fas fa-sync-alt"></i> Refresh Services
+                        </button>
+                    </div>
+                </div>
+
+                <!-- API Balance Display -->
+                <div class="g2bulk-balance-card" id="g2bulk-balance-card">
+                    <div class="balance-header">
+                        <i class="fas fa-wallet"></i>
+                        <h3>API Balance</h3>
+                    </div>
+                    <div class="balance-amount" id="g2bulk-balance-display">Loading...</div>
+                </div>
+
+                <!-- Search & Filter -->
+                <div class="g2bulk-search-bar">
+                    <div class="search-input-group">
+                        <i class="fas fa-search"></i>
+                        <input type="text" id="g2bulk-search" placeholder="Search services by name, ID or category..." oninput="AdminApp.filterG2BulkServices()">
+                    </div>
+                    <select id="g2bulk-category-filter" onchange="AdminApp.filterG2BulkServices()">
+                        <option value="all">All Categories</option>
+                    </select>
+                </div>
+
+                <!-- Services Count -->
+                <div class="services-count" id="g2bulk-services-count">0 services found</div>
+
+                <!-- Services List -->
+                <div class="g2bulk-services-list" id="g2bulk-services-list">
+                    <div class="empty-state">
+                        <i class="fas fa-cloud-download-alt"></i>
+                        <p>Click "Refresh Services" to load G2Bulk services</p>
+                    </div>
                 </div>
             </div>
 
@@ -257,21 +320,17 @@
                     <button class="add-btn" onclick="showAddBanner('type1')">
                         <i class="fas fa-plus"></i> Add Homepage Banner
                     </button>
-                    <div class="banners-list" id="banners-type1-list">
-                        <!-- Type 1 banners -->
-                    </div>
+                    <div class="banners-list" id="banners-type1-list"></div>
                 </div>
                 <div id="banner-type2" class="banner-section hidden">
                     <button class="add-btn" onclick="showAddBanner('type2')">
                         <i class="fas fa-plus"></i> Add Category Banner
                     </button>
-                    <div class="banners-list" id="banners-type2-list">
-                        <!-- Type 2 banners -->
-                    </div>
+                    <div class="banners-list" id="banners-type2-list"></div>
                 </div>
             </div>
 
-            <!-- Input Tables Page -->
+            <!-- Input Tables Page (UPDATED with checker) -->
             <div id="admin-page-input-tables" class="admin-page hidden">
                 <div class="page-header">
                     <h1><i class="fas fa-keyboard"></i> Input Tables</h1>
@@ -279,9 +338,7 @@
                         <i class="fas fa-plus"></i> Add Input Table
                     </button>
                 </div>
-                <div class="input-tables-list" id="admin-input-tables-list">
-                    <!-- Input tables will be loaded here -->
-                </div>
+                <div class="input-tables-list" id="admin-input-tables-list"></div>
             </div>
 
             <!-- Payment Methods Page -->
@@ -292,9 +349,7 @@
                         <i class="fas fa-plus"></i> Add Payment Method
                     </button>
                 </div>
-                <div class="payments-list" id="admin-payments-list">
-                    <!-- Payment methods will be loaded here -->
-                </div>
+                <div class="payments-list" id="admin-payments-list"></div>
             </div>
 
             <!-- Announcements Page -->
@@ -344,85 +399,23 @@
                 <div class="page-header">
                     <h1><i class="fas fa-ban"></i> Banned Users</h1>
                 </div>
-                <div class="banned-list" id="admin-banned-list">
-                    <!-- Banned users will be loaded here -->
-                </div>
+                <div class="banned-list" id="admin-banned-list"></div>
             </div>
 
             <!-- Custom Emojis Page -->
-<div id="admin-page-emojis" class="admin-page hidden">
-    <div class="page-header-bar">
-        <h1><i class="fas fa-smile-wink"></i> Custom Emojis</h1>
-        <button class="btn btn-primary" onclick="showAddEmoji()">
-            <i class="fas fa-plus"></i> Add Emoji
-        </button>
-    </div>
-    
-    <div class="info-box">
-        <i class="fas fa-info-circle"></i>
-        <p>Create custom emojis to use in product names, descriptions, and announcements. Assign a trigger emoji (like 😎) and it will be replaced with your custom image. Supports PNG, JPG, WEBP, GIF files.</p>
-    </div>
-    
-    <div class="emojis-grid" id="admin-emojis-list">
-    </div>
-</div>
-
-<!-- Add Emoji Modal -->
-<div id="add-emoji-modal" class="modal hidden">
-    <div class="modal-overlay" onclick="closeAddEmoji()"></div>
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3><i class="fas fa-smile-wink"></i> Add Custom Emoji</h3>
-            <button class="close-btn" onclick="closeAddEmoji()">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <div class="modal-body">
-            <div class="form-group">
-                <label>Emoji Name</label>
-                <input type="text" id="emoji-name" placeholder="e.g., Fire Diamond">
-            </div>
-            
-            <div class="form-group">
-                <label>Trigger Emoji <span class="required">*</span></label>
-                <input type="text" id="emoji-trigger" placeholder="Click to select emoji" readonly onclick="showEmojiPicker()">
-                <small>This emoji will be replaced with your custom image</small>
-            </div>
-            
-            <div class="form-group">
-                <label>Upload Image/GIF <span class="required">*</span></label>
-                <div class="upload-box" onclick="triggerEmojiUpload()">
-                    <i class="fas fa-cloud-upload-alt"></i>
-                    <p>Click to upload</p>
-                    <small>PNG, JPG, WEBP, GIF supported (Max 32MB)</small>
+            <div id="admin-page-emojis" class="admin-page hidden">
+                <div class="page-header-bar">
+                    <h1><i class="fas fa-smile-wink"></i> Custom Emojis</h1>
+                    <button class="btn btn-primary" onclick="showAddEmoji()">
+                        <i class="fas fa-plus"></i> Add Emoji
+                    </button>
                 </div>
-                <input type="file" id="emoji-file" accept=".png,.jpg,.jpeg,.gif,.webp,image/png,image/jpeg,image/gif,image/webp" hidden onchange="previewEmojiFile(event)">
-                <div id="emoji-file-preview" class="file-preview hidden"></div>
+                <div class="info-box">
+                    <i class="fas fa-info-circle"></i>
+                    <p>Create custom emojis to use in product names, descriptions, and announcements.</p>
+                </div>
+                <div class="emojis-grid" id="admin-emojis-list"></div>
             </div>
-            
-            <button class="btn btn-primary btn-full" onclick="saveCustomEmoji()">
-                <i class="fas fa-check"></i> Create Emoji
-            </button>
-        </div>
-    </div>
-</div>
-
-<!-- Emoji Picker Modal -->
-<div id="emoji-picker-modal" class="modal hidden">
-    <div class="modal-overlay" onclick="closeEmojiPicker()"></div>
-    <div class="modal-content modal-sm">
-        <div class="modal-header">
-            <h3><i class="fas fa-smile"></i> Select Trigger Emoji</h3>
-            <button class="close-btn" onclick="closeEmojiPicker()">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <div class="modal-body">
-            <div class="emoji-picker-grid" id="emoji-picker-grid">
-            </div>
-        </div>
-    </div>
-</div>
 
             <!-- Settings Page -->
             <div id="admin-page-settings" class="admin-page hidden">
@@ -571,31 +564,31 @@
         </div>
     </div>
 
-    <!-- Add Product Modal -->
+    <!-- Add Product Modal (UPDATED with G2Bulk) -->
     <div id="add-product-modal" class="modal hidden">
         <div class="modal-overlay" onclick="closeAddProduct()"></div>
         <div class="modal-content large">
             <div class="modal-header">
-                <h3><i class="fas fa-plus"></i> Add Product</h3>
+                <h3><i class="fas fa-plus"></i> <span id="product-modal-title">Add Product</span></h3>
                 <button class="close-btn" onclick="closeAddProduct()">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
             <div class="modal-body">
                 <div class="form-group">
-                    <label>Select Category</label>
+                    <label>Select Category <span class="required">*</span></label>
                     <select id="product-category">
                         <option value="">Select Category</option>
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Product Name (Amount)</label>
+                    <label>Product Name <span class="required">*</span></label>
                     <input type="text" id="product-name" placeholder="e.g., 60 UC">
                 </div>
                 <div class="form-group">
-                    <label>Price</label>
+                    <label>Price (Sell Price in your website) <span class="required">*</span></label>
                     <div class="price-input-group">
-                        <input type="number" id="product-price" placeholder="Enter price">
+                        <input type="number" id="product-price" placeholder="Enter sell price">
                         <select id="product-currency">
                             <option value="MMK">MMK</option>
                             <option value="¥">¥ (CNY)</option>
@@ -619,7 +612,7 @@
                 <div class="form-group">
                     <label>Delivery Time</label>
                     <select id="product-delivery">
-                        <option value="instant">Instant</option>
+                        <option value="instant">Instant (Auto)</option>
                         <option value="30min">30 Minutes</option>
                         <option value="1hour">1 Hour</option>
                         <option value="2hours">2 Hours</option>
@@ -627,11 +620,38 @@
                     </select>
                 </div>
 
+                <!-- G2Bulk Service Link - NEW/UPDATED -->
+                <div class="form-section-header">
+                    <h4><i class="fas fa-cloud"></i> G2Bulk API Configuration</h4>
+                    <small>Link this product to a G2Bulk service for auto delivery</small>
+                </div>
                 <div class="form-group">
-    <label>API Service ID <small>(For Auto Top-Up)</small></label>
-    <input type="number" id="product-service-id" placeholder="e.g., 1, 2, 3...">
-    <small>Leave empty for manual processing. Get Service ID from API.</small>
-</div>
+                    <label>G2Bulk Service ID <span class="required">*</span></label>
+                    <div class="service-id-input-group">
+                        <input type="number" id="product-service-id" placeholder="Enter Service ID from G2Bulk">
+                        <button type="button" class="btn btn-sm" onclick="AdminApp.lookupServiceId()">
+                            <i class="fas fa-search"></i> Lookup
+                        </button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="AdminApp.openG2BulkServiceBrowser()">
+                            <i class="fas fa-list"></i> Browse
+                        </button>
+                    </div>
+                    <small>Get Service ID from G2Bulk Services page or enter manually</small>
+                </div>
+                <div id="service-lookup-result" class="service-lookup-result hidden"></div>
+
+                <div class="form-group">
+                    <label>G2Bulk Rate (Cost per unit in USD)</label>
+                    <input type="text" id="product-g2bulk-rate" placeholder="Auto-filled from lookup" readonly>
+                </div>
+                <div class="form-group">
+                    <label>G2Bulk Min/Max Quantity</label>
+                    <div class="min-max-group">
+                        <input type="number" id="product-g2bulk-min" placeholder="Min" readonly>
+                        <input type="number" id="product-g2bulk-max" placeholder="Max" readonly>
+                    </div>
+                </div>
+
                 <button class="save-btn" onclick="saveProduct()">
                     <i class="fas fa-save"></i> Save Product
                 </button>
@@ -676,10 +696,10 @@
         </div>
     </div>
 
-    <!-- Add Input Table Modal -->
+    <!-- Add Input Table Modal (UPDATED with Game ID Checker) -->
     <div id="add-input-table-modal" class="modal hidden">
         <div class="modal-overlay" onclick="closeAddInputTable()"></div>
-        <div class="modal-content">
+        <div class="modal-content large">
             <div class="modal-header">
                 <h3><i class="fas fa-plus"></i> Add Input Table</h3>
                 <button class="close-btn" onclick="closeAddInputTable()">
@@ -701,6 +721,66 @@
                     <label>Placeholder Text</label>
                     <input type="text" id="input-table-placeholder" placeholder="e.g., Enter your UID here">
                 </div>
+
+                <!-- NEW: Game ID Checker Config -->
+                <div class="form-section-header">
+                    <h4><i class="fas fa-search"></i> Game ID Checker (Optional)</h4>
+                    <small>Enable ID verification before purchase</small>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="checker-enabled" onchange="toggleCheckerConfig()">
+                        <span>Enable Game ID Checker</span>
+                    </label>
+                </div>
+                <div id="checker-config-section" class="checker-config hidden">
+                    <div class="form-group">
+                        <label>API URL</label>
+                        <input type="text" id="checker-api-url" placeholder="https://api.example.com/check?id={{value}}">
+                        <small>Use <code>{{value}}</code> as placeholder for the input value</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Method</label>
+                        <select id="checker-method">
+                            <option value="GET">GET</option>
+                            <option value="POST">POST</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="checker-headers-group">
+                        <label>Headers (JSON)</label>
+                        <textarea id="checker-headers" placeholder='{"Content-Type": "application/json"}'></textarea>
+                    </div>
+                    <div class="form-group" id="checker-body-group">
+                        <label>Body Template (JSON - POST only)</label>
+                        <textarea id="checker-body-template" placeholder='{"uid": "{{value}}"}'></textarea>
+                        <small>Use <code>{{value}}</code> for the user input</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Response Name Path (dot notation)</label>
+                        <input type="text" id="checker-name-path" placeholder="e.g., data.nickname or result.name">
+                        <small>Path to player name in API response</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Response Valid Path (dot notation, optional)</label>
+                        <input type="text" id="checker-valid-path" placeholder="e.g., data.is_valid or success">
+                        <small>Path to boolean valid check. Leave empty to use name existence.</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Error Message</label>
+                        <input type="text" id="checker-error-msg" placeholder="Invalid Game ID. Please check and try again." value="Invalid Game ID. Please check and try again.">
+                    </div>
+                    <div class="form-group">
+                        <label>Test Checker</label>
+                        <div class="test-checker-group">
+                            <input type="text" id="checker-test-value" placeholder="Enter test ID">
+                            <button class="btn btn-sm" onclick="AdminApp.testChecker()">
+                                <i class="fas fa-play"></i> Test
+                            </button>
+                        </div>
+                        <div id="checker-test-result" class="checker-test-result hidden"></div>
+                    </div>
+                </div>
+
                 <button class="save-btn" onclick="saveInputTable()">
                     <i class="fas fa-save"></i> Save Input Table
                 </button>
@@ -761,8 +841,80 @@
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <div class="modal-body" id="user-details-content">
-                <!-- User details will be loaded here -->
+            <div class="modal-body" id="user-details-content"></div>
+        </div>
+    </div>
+
+    <!-- Add Emoji Modal -->
+    <div id="add-emoji-modal" class="modal hidden">
+        <div class="modal-overlay" onclick="closeAddEmoji()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-smile-wink"></i> Add Custom Emoji</h3>
+                <button class="close-btn" onclick="closeAddEmoji()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Emoji Name</label>
+                    <input type="text" id="emoji-name" placeholder="e.g., Fire Diamond">
+                </div>
+                <div class="form-group">
+                    <label>Trigger Emoji <span class="required">*</span></label>
+                    <input type="text" id="emoji-trigger" placeholder="Click to select emoji" readonly onclick="showEmojiPicker()">
+                    <small>This emoji will be replaced with your custom image</small>
+                </div>
+                <div class="form-group">
+                    <label>Upload Image/GIF <span class="required">*</span></label>
+                    <div class="upload-box" onclick="triggerEmojiUpload()">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <p>Click to upload</p>
+                        <small>PNG, JPG, WEBP, GIF supported (Max 32MB)</small>
+                    </div>
+                    <input type="file" id="emoji-file" accept=".png,.jpg,.jpeg,.gif,.webp,image/png,image/jpeg,image/gif,image/webp" hidden onchange="previewEmojiFile(event)">
+                    <div id="emoji-file-preview" class="file-preview hidden"></div>
+                </div>
+                <button class="btn btn-primary btn-full" onclick="saveCustomEmoji()">
+                    <i class="fas fa-check"></i> Create Emoji
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Emoji Picker Modal -->
+    <div id="emoji-picker-modal" class="modal hidden">
+        <div class="modal-overlay" onclick="closeEmojiPicker()"></div>
+        <div class="modal-content modal-sm">
+            <div class="modal-header">
+                <h3><i class="fas fa-smile"></i> Select Trigger Emoji</h3>
+                <button class="close-btn" onclick="closeEmojiPicker()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="emoji-picker-grid" id="emoji-picker-grid"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- G2Bulk Service Browser Modal - NEW -->
+    <div id="g2bulk-browser-modal" class="modal hidden">
+        <div class="modal-overlay" onclick="AdminApp.closeG2BulkBrowser()"></div>
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h3><i class="fas fa-cloud"></i> Select G2Bulk Service</h3>
+                <button class="close-btn" onclick="AdminApp.closeG2BulkBrowser()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <input type="text" id="g2bulk-browser-search" placeholder="Search services..." oninput="AdminApp.filterBrowserServices()">
+                </div>
+                <div class="g2bulk-browser-list" id="g2bulk-browser-list">
+                    <p>Loading services...</p>
+                </div>
             </div>
         </div>
     </div>
@@ -786,35 +938,15 @@
     <script src="js/database.js"></script>
     <script src="js/telegram.js"></script>
     <script src="js/admin.js"></script>
-    <!-- Cookie Consent -->
     <script src="js/cookie-consent.js"></script>
 
-     <!-- Privacy Policy Link in Sidebar -->
-<div class="sidebar-footer" style="
-    padding: 16px;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    margin-top: auto;
-">
-    <a href="https://mafiad9.vercel.app/privacy-policy.html" target="_blank" style="
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 12px 16px;
-        background: rgba(124, 58, 237, 0.1);
-        border: 1px solid rgba(124, 58, 237, 0.2);
-        border-radius: 12px;
-        color: #a78bfa;
-        text-decoration: none;
-        font-size: 14px;
-        font-weight: 500;
-        transition: all 0.3s ease;
-    " onmouseover="this.style.background='rgba(124, 58, 237, 0.2)'; this.style.borderColor='#7c3aed';" 
-       onmouseout="this.style.background='rgba(124, 58, 237, 0.1)'; this.style.borderColor='rgba(124, 58, 237, 0.2)';">
-        <i class="fas fa-shield-alt"></i>
-        <span>Privacy Policy</span>
-        <i class="fas fa-external-link-alt" style="margin-left: auto; font-size: 12px; opacity: 0.7;"></i>
-    </a>
-</div>
-    
+    <!-- Privacy Policy Link in Sidebar -->
+    <div class="sidebar-footer" style="padding:16px;border-top:1px solid rgba(255,255,255,0.1);margin-top:auto;">
+        <a href="https://mafiad9.vercel.app/privacy-policy.html" target="_blank" style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(124,58,237,0.1);border:1px solid rgba(124,58,237,0.2);border-radius:12px;color:#a78bfa;text-decoration:none;font-size:14px;font-weight:500;transition:all 0.3s ease;">
+            <i class="fas fa-shield-alt"></i>
+            <span>Privacy Policy</span>
+            <i class="fas fa-external-link-alt" style="margin-left:auto;font-size:12px;opacity:0.7;"></i>
+        </a>
+    </div>
 </body>
 </html>
