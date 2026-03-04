@@ -330,16 +330,120 @@
                 </div>
             </div>
 
-            <!-- Input Tables Page (UPDATED with checker) -->
-            <div id="admin-page-input-tables" class="admin-page hidden">
-                <div class="page-header">
-                    <h1><i class="fas fa-keyboard"></i> Input Tables</h1>
-                    <button class="add-btn" onclick="showAddInputTable()">
-                        <i class="fas fa-plus"></i> Add Input Table
-                    </button>
-                </div>
-                <div class="input-tables-list" id="admin-input-tables-list"></div>
+                <!-- Add Input Table Modal (REDESIGNED - Simple JSON Checker) -->
+    <div id="add-input-table-modal" class="modal hidden">
+        <div class="modal-overlay" onclick="closeAddInputTable()"></div>
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h3><i class="fas fa-plus"></i> <span id="input-table-modal-title">Add Input Table</span></h3>
+                <button class="close-btn" onclick="closeAddInputTable()">
+                    <i class="fas fa-times"></i>
+                </button>
             </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Select Category <span class="required">*</span></label>
+                    <select id="input-table-category">
+                        <option value="">Select Category</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Input Name <span class="required">*</span></label>
+                    <input type="text" id="input-table-name" placeholder="e.g., Player ID, User ID, UID">
+                </div>
+                <div class="form-group">
+                    <label>Placeholder Text <span class="required">*</span></label>
+                    <input type="text" id="input-table-placeholder" placeholder="e.g., Enter your Player ID here">
+                </div>
+
+                <!-- Game ID Checker - SIMPLIFIED -->
+                <div class="form-section-header">
+                    <h4><i class="fas fa-search"></i> Game ID Checker</h4>
+                    <small>Auto verify player ID before purchase</small>
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="checker-enabled" onchange="toggleCheckerConfig()">
+                        <span>Enable Game ID Checker</span>
+                    </label>
+                </div>
+
+                <div id="checker-config-section" class="checker-config hidden">
+                    <!-- Quick Presets -->
+                    <div class="form-group">
+                        <label><i class="fas fa-gamepad"></i> Game Presets</label>
+                        <select id="checker-preset" onchange="AdminApp.loadCheckerPreset()">
+                            <option value="">-- Custom (Paste JSON) --</option>
+                            <option value="ml">📱 Mobile Legends (userId + zoneId)</option>
+                            <option value="ff">🔥 Free Fire (userId)</option>
+                            <option value="pubg">🎮 PUBG Mobile (userId)</option>
+                            <option value="genshin">⭐ Genshin Impact (userId + server)</option>
+                            <option value="hok">👑 Honor of Kings (userId)</option>
+                            <option value="codm">🔫 Call of Duty Mobile (userId)</option>
+                            <option value="aov">⚔️ Arena of Valor (userId)</option>
+                            <option value="lol">🏆 League of Legends (userId)</option>
+                        </select>
+                        <small>Select a game to auto-fill the checker config, then enter your RapidAPI key</small>
+                    </div>
+
+                    <!-- RapidAPI Key (shown when preset selected) -->
+                    <div class="form-group" id="rapidapi-key-group">
+                        <label><i class="fas fa-key"></i> RapidAPI Key</label>
+                        <input type="text" id="checker-rapidapi-key" placeholder="Paste your RapidAPI key here">
+                        <small>Get your key from <a href="https://rapidapi.com/okebagus426/api/check-id-game1" target="_blank" style="color:var(--primary);">RapidAPI - Check ID Game</a></small>
+                    </div>
+
+                    <!-- JSON Code -->
+                    <div class="form-group">
+                        <label><i class="fas fa-code"></i> Checker JSON Code</label>
+                        <textarea id="checker-json-code" rows="14" placeholder='{
+  "url": "https://check-id-game1.p.rapidapi.com/ml",
+  "method": "POST",
+  "headers": {
+    "Content-Type": "application/json",
+    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",
+    "x-rapidapi-key": "YOUR_KEY"
+  },
+  "body": {
+    "userId": "{{value}}",
+    "zoneId": "{{Zone ID}}"
+  },
+  "response": {
+    "valid": "success",
+    "nickname": "data.username",
+    "country": "data.country_code",
+    "avatar": "data.avatar",
+    "level": "data.level"
+  },
+  "errorMessage": "Player not found"
+}' class="code-textarea"></textarea>
+                        <small>
+                            <code>{{value}}</code> = this input field's value &nbsp;|&nbsp;
+                            <code>{{Field Name}}</code> = another input's value (e.g., <code>{{Zone ID}}</code>)
+                        </small>
+                    </div>
+
+                    <!-- Test Section -->
+                    <div class="form-group">
+                        <label><i class="fas fa-flask"></i> Test Checker</label>
+                        <div class="test-checker-group">
+                            <input type="text" id="checker-test-value" placeholder="Test ID (e.g., 123456789)">
+                            <input type="text" id="checker-test-value2" placeholder="Zone/Server ID (optional)">
+                            <button class="btn btn-sm btn-primary" onclick="AdminApp.testChecker()">
+                                <i class="fas fa-play"></i> Test
+                            </button>
+                        </div>
+                        <div id="checker-test-result" class="checker-test-result hidden"></div>
+                    </div>
+                </div>
+
+                <button class="save-btn" onclick="saveInputTable()">
+                    <i class="fas fa-save"></i> Save Input Table
+                </button>
+            </div>
+        </div>
+    </div>
 
             <!-- Payment Methods Page -->
             <div id="admin-page-payments" class="admin-page hidden">
