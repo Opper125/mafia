@@ -3047,3 +3047,240 @@ body::after {
         display: none !important;
     }
 }
+
+/* ===== GAME ID CHECKER STYLES ===== */
+
+.input-with-checker {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.input-with-checker input {
+    flex: 1;
+}
+
+.checker-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    border: none;
+    border-radius: 12px;
+    background: var(--gradient-primary, linear-gradient(135deg, #8b5cf6, #6d28d9));
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+}
+
+.checker-btn:active {
+    transform: scale(0.92);
+}
+
+/* Checker Result Container */
+.checker-result-container {
+    margin-top: 8px;
+    border-radius: 14px;
+    overflow: hidden;
+    animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.checker-result-container.checking {
+    background: rgba(139, 92, 246, 0.08);
+    border: 1px solid rgba(139, 92, 246, 0.2);
+    padding: 12px 16px;
+}
+
+.checker-loading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #a78bfa;
+    font-size: 14px;
+}
+
+/* Game ID Card */
+.game-id-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    transition: all 0.3s ease;
+}
+
+.game-id-card.valid {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.08));
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.game-id-card.invalid {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.08), rgba(220, 38, 38, 0.06));
+    border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.game-id-card.error {
+    background: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+/* Avatar */
+.game-id-avatar {
+    width: 52px;
+    height: 52px;
+    min-width: 52px;
+    border-radius: 50%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(139, 92, 246, 0.15);
+    font-size: 28px;
+    color: #a78bfa;
+}
+
+.game-id-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.game-id-avatar.error {
+    background: rgba(239, 68, 68, 0.12);
+    color: #ef4444;
+}
+
+/* Info */
+.game-id-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.game-id-status {
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 3px;
+    color: #10b981;
+}
+
+.game-id-status.error {
+    color: #ef4444;
+}
+
+.game-id-nickname {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text-primary, #fff);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.game-id-details {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+}
+
+.game-id-country,
+.game-id-level {
+    font-size: 12px;
+    color: var(--text-secondary, #9ca3af);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(255,255,255,0.06);
+    padding: 2px 8px;
+    border-radius: 20px;
+}
+
+.game-id-error {
+    font-size: 13px;
+    color: var(--text-secondary, #9ca3af);
+    margin-top: 2px;
+}
+
+/* Auto Delivery Badge */
+.auto-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(5, 150, 105, 0.1));
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 20px;
+    color: #10b981;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* Order API Info */
+.order-api-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 8px 0;
+}
+
+.api-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    background: rgba(59, 130, 246, 0.12);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    border-radius: 8px;
+    color: #3b82f6;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.api-status {
+    padding: 3px 10px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* Order Status Colors */
+.order-status.processing,
+.status-badge.processing { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+.order-status.queued,
+.status-badge.queued { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.order-status.completed,
+.status-badge.completed { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+.order-status.failed,
+.status-badge.failed { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+.order-status.partial,
+.status-badge.partial { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+.order-status.canceled,
+.status-badge.canceled { background: rgba(107, 114, 128, 0.15); color: #6b7280; }
+
+/* Order Refund Info */
+.order-refund {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: 10px;
+    color: #10b981;
+    font-size: 13px;
+    font-weight: 500;
+    margin-top: 8px;
+}
