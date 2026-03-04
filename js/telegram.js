@@ -561,7 +561,103 @@ ${additionalText}
         
         return this.sendMessage(topup.telegramId, message);
     },
-    
+
+    // Add these NEW methods to TelegramBot object (after existing methods):
+
+    // NEW: Notify auto order placed
+    async notifyNewAutoOrder(order, user, apiOrderId) {
+        const message = `
+🤖 <b>Auto Order Placed!</b>
+
+📦 <b>Product:</b> ${order.productName}
+💰 <b>Amount:</b> ${Utils.formatCurrency(order.amount, order.currency)}
+🆔 <b>Order ID:</b> ${order.orderId}
+🔗 <b>API Order:</b> #${apiOrderId}
+
+👤 <b>Customer:</b> ${user.firstName} ${user.lastName || ''}
+📱 <b>Username:</b> @${user.username || 'N/A'}
+
+📝 <b>Game Info:</b>
+${Object.entries(order.inputValues).map(([k, v]) => `• ${k}: ${v}`).join('\n')}
+
+⚡ <b>Status:</b> Auto Processing via G2Bulk
+⏰ ${Utils.formatDate(order.createdAt, 'long')}
+        `;
+        return this.notifyAdmin(message);
+    },
+
+    // NEW: Notify order queued
+    async notifyOrderQueued(order, user) {
+        const adminMsg = `
+⏳ <b>Order Queued!</b>
+
+📦 ${order.productName} - ${Utils.formatCurrency(order.amount, order.currency)}
+🆔 ${order.orderId}
+👤 ${user.firstName} (@${user.username || 'N/A'})
+⚠️ <b>Reason:</b> API balance insufficient
+
+💡 Please add funds to G2Bulk account to process queued orders.
+        `;
+        await this.notifyAdmin(adminMsg);
+        
+        const userMsg = `
+⏳ <b>Order Queued</b>
+
+📦 <b>Product:</b> ${order.productName}
+🆔 <b>Order ID:</b> ${order.orderId}
+💰 <b>Amount:</b> ${Utils.formatCurrency(order.amount, order.currency)}
+
+Your order has been queued and will be automatically processed shortly. No action needed from your side.
+        `;
+        return this.sendMessage(order.telegramId, userMsg);
+    },
+
+    // NEW: Notify order completed (auto)
+    async notifyOrderCompleted(order) {
+        const message = `
+✅ <b>Order Completed!</b>
+
+📦 <b>Product:</b> ${order.productName}
+🆔 <b>Order ID:</b> ${order.orderId}
+${order.apiOrderId ? `🔗 <b>API Order:</b> #${order.apiOrderId}` : ''}
+
+🎮 Your order has been delivered to your game account!
+Please check your in-game items.
+
+Thank you for your purchase! 🎉
+        `;
+        return this.sendMessage(order.telegramId, message);
+    },
+
+    // NEW: Notify order failed with refund
+    async notifyOrderFailed(order, reason) {
+        const message = `
+❌ <b>Order Failed</b>
+
+📦 <b>Product:</b> ${order.productName}
+🆔 <b>Order ID:</b> ${order.orderId}
+⚠️ <b>Reason:</b> ${reason || 'Unknown error'}
+
+💰 <b>${Utils.formatCurrency(order.amount, order.currency)}</b> has been refunded to your wallet.
+
+If you have questions, please contact support.
+        `;
+        return this.sendMessage(order.telegramId, message);
+    },
+
+    // NEW: Notify order partial
+    async notifyOrderPartial(order) {
+        const message = `
+⚠️ <b>Order Partially Completed</b>
+
+📦 <b>Product:</b> ${order.productName}
+🆔 <b>Order ID:</b> ${order.orderId}
+
+Your order was partially completed. Please contact support for assistance.
+        `;
+        return this.sendMessage(order.telegramId, message);
+    },
+   
     // Send ban notification to user
     async notifyBan(telegramId, reason) {
         const message = `
