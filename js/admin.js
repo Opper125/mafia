@@ -1,4 +1,4 @@
-// ===== Admin Panel Application - G2Bulk Integrated + Enhanced Game ID Checker =====
+// ===== Admin Panel Application - G2Bulk Integrated + Auto Game ID + Add Funds =====
 
 const AdminApp = {
     state: {
@@ -22,35 +22,30 @@ const AdminApp = {
         g2bulkServices: [],
         g2bulkServicesRaw: [],
         g2bulkBalance: null,
-        g2bulkCategories: []
+        g2bulkCategories: [],
+        detectedGameFields: null
     },
     
     async init() {
-        console.log('ðŸš€ Initializing Admin Panel...');
-        
+        console.log('🚀 Initializing Admin Panel...');
         try {
             if (!TelegramApp.isInTelegram()) {
                 this.showAccessDenied('This panel can only be accessed through Telegram');
                 return;
             }
-            
             await TelegramApp.init();
-            
             if (!TelegramApp.isAdmin()) {
                 this.showAccessDenied('You don\'t have permission to access this panel');
                 return;
             }
-            
             Utils.showLoading('Loading admin panel...');
             await this.loadAdminData();
             this.showDashboard();
             TelegramApp.ready();
             Utils.hideLoading();
-            
             this.refreshApiBalance();
-            
         } catch (error) {
-            console.error('âŒ Admin init error:', error);
+            console.error('❌ Admin init error:', error);
             Utils.hideLoading();
             Utils.showToast('Failed to initialize: ' + error.message, 'error');
         }
@@ -86,7 +81,6 @@ const AdminApp = {
                 Database.getBannedUsers(),
                 Database.getStats()
             ]);
-            
             this.state.settings = results[0].status === 'fulfilled' ? results[0].value : {};
             this.state.users = results[1].status === 'fulfilled' ? results[1].value : [];
             this.state.orders = results[2].status === 'fulfilled' ? results[2].value : [];
@@ -99,7 +93,6 @@ const AdminApp = {
             this.state.bannedUsers = results[9].status === 'fulfilled' ? results[9].value : [];
             this.state.customEmojis = this.state.settings?.customEmojis || [];
             this.state.stats = results[10].status === 'fulfilled' ? results[10].value : {};
-            
             this.updateSidebarCounts();
         } catch (error) {
             console.error('Load admin data error:', error);
@@ -111,12 +104,9 @@ const AdminApp = {
         const usersCount = document.getElementById('users-count');
         const pendingOrders = document.getElementById('pending-orders');
         const pendingTopups = document.getElementById('pending-topups');
-        
         if (usersCount) usersCount.textContent = this.state.users.length;
         if (pendingOrders) {
-            const count = this.state.orders.filter(o => 
-                o.status === 'pending' || o.status === 'processing' || o.status === 'queued'
-            ).length;
+            const count = this.state.orders.filter(o => o.status === 'pending' || o.status === 'processing' || o.status === 'queued').length;
             pendingOrders.textContent = count;
         }
         if (pendingTopups) pendingTopups.textContent = this.state.topups.filter(t => t.status === 'pending').length;
@@ -133,10 +123,7 @@ const AdminApp = {
     
     startRealtimeUpdates() {
         setInterval(async () => {
-            try {
-                await this.loadAdminData();
-                this.renderCurrentPage();
-            } catch (error) {}
+            try { await this.loadAdminData(); this.renderCurrentPage(); } catch (error) {}
         }, 30000);
     },
     
@@ -147,10 +134,7 @@ const AdminApp = {
         if (active) active.classList.add('active');
         document.querySelectorAll('.admin-page').forEach(p => p.classList.add('hidden'));
         const target = document.getElementById(`admin-page-${page}`);
-        if (target) {
-            target.classList.remove('hidden');
-            this.renderCurrentPage();
-        }
+        if (target) { target.classList.remove('hidden'); this.renderCurrentPage(); }
     },
     
     renderCurrentPage() {
@@ -172,19 +156,17 @@ const AdminApp = {
             case 'database': this.renderDatabaseIds(); break;
         }
     },
-    
+
     // ===== DASHBOARD =====
     renderDashboard() {
         document.getElementById('stat-users').textContent = this.state.stats.totalUsers || this.state.users.length || 0;
         document.getElementById('stat-orders').textContent = this.state.stats.totalOrders || this.state.orders.length || 0;
         document.getElementById('stat-revenue').textContent = this.state.stats.totalRevenue || 0;
         document.getElementById('stat-pending').textContent = this.state.stats.pendingOrders || this.state.orders.filter(o => o.status === 'pending').length || 0;
-        
         const processingEl = document.getElementById('stat-processing');
         const queuedEl = document.getElementById('stat-queued');
         if (processingEl) processingEl.textContent = this.state.stats.processingOrders || this.state.orders.filter(o => o.status === 'processing').length || 0;
         if (queuedEl) queuedEl.textContent = this.state.stats.queuedOrders || this.state.orders.filter(o => o.status === 'queued').length || 0;
-        
         this.renderRecentOrders();
         this.renderRecentTopups();
     },
@@ -194,9 +176,9 @@ const AdminApp = {
             const result = await G2BulkAPI.getBalance();
             if (result && result.balance) {
                 this.state.g2bulkBalance = result;
+                const balanceText = `$${parseFloat(result.balance).toFixed(4)} ${result.currency || 'USD'}`;
                 const displayEl = document.getElementById('api-balance-value');
                 const g2bulkDisplayEl = document.getElementById('g2bulk-balance-display');
-                const balanceText = `$${parseFloat(result.balance).toFixed(4)} ${result.currency || 'USD'}`;
                 if (displayEl) displayEl.textContent = balanceText;
                 if (g2bulkDisplayEl) g2bulkDisplayEl.textContent = balanceText;
             }
@@ -243,7 +225,7 @@ const AdminApp = {
     getAvatar(id) {
         return `https://ui-avatars.com/api/?name=${id}&background=8b5cf6&color=fff&size=100`;
     },
-    
+
     // ===== USERS =====
     renderUsers() {
         const tbody = document.getElementById('users-table-body');
@@ -268,7 +250,7 @@ const AdminApp = {
         const user = this.state.users.find(u => u.telegramId === telegramId);
         if (!user) return;
         const content = document.getElementById('user-details-content');
-        content.innerHTML = `<div class="user-details-header"><img src="${user.photoUrl || this.getAvatar(user.firstName)}" alt="${user.firstName}"><div class="user-details-info"><h3>${user.firstName} ${user.lastName || ''}</h3><p>@${user.username || 'N/A'} â€¢ ID: ${user.telegramId}</p>${user.isPremium ? '<span class="badge premium"><i class="fas fa-star"></i> Telegram Premium</span>' : ''}</div></div>
+        content.innerHTML = `<div class="user-details-header"><img src="${user.photoUrl || this.getAvatar(user.firstName)}" alt="${user.firstName}"><div class="user-details-info"><h3>${user.firstName} ${user.lastName || ''}</h3><p>@${user.username || 'N/A'} • ID: ${user.telegramId}</p>${user.isPremium ? '<span class="badge premium"><i class="fas fa-star"></i> Telegram Premium</span>' : ''}</div></div>
         <div class="user-stats-row"><div class="user-stat-box"><span class="stat-value">${Utils.formatCurrency(user.balance, '')}</span><span class="stat-label">Balance</span></div><div class="user-stat-box"><span class="stat-value">${user.totalOrders || 0}</span><span class="stat-label">Orders</span></div><div class="user-stat-box"><span class="stat-value">${Utils.formatCurrency(user.totalSpent || 0, '')}</span><span class="stat-label">Spent</span></div></div>
         <div class="user-info-grid"><div class="info-item"><span>Joined:</span> <strong>${Utils.formatDate(user.joinedAt, 'long')}</strong></div><div class="info-item"><span>Last Active:</span> <strong>${Utils.formatDate(user.lastActive, 'long')}</strong></div></div>
         <div class="user-actions-row"><button class="btn btn-primary" onclick="AdminApp.editUserBalance('${user.telegramId}')"><i class="fas fa-wallet"></i> Edit Balance</button><button class="btn btn-danger" onclick="AdminApp.banUserPrompt('${user.telegramId}')"><i class="fas fa-ban"></i> Ban User</button></div>`;
@@ -283,9 +265,7 @@ const AdminApp = {
             Utils.showLoading('Updating balance...');
             try {
                 await Database.updateUserBalance(telegramId, parseFloat(newBalance), 'set');
-                await this.loadAdminData();
-                this.renderUsers();
-                this.closeUserDetails();
+                await this.loadAdminData(); this.renderUsers(); this.closeUserDetails();
                 Utils.showToast('Balance updated!', 'success');
             } catch (error) { Utils.showToast('Failed to update balance', 'error'); }
             finally { Utils.hideLoading(); }
@@ -300,9 +280,7 @@ const AdminApp = {
                 const user = this.state.users.find(u => u.telegramId === telegramId);
                 await Database.banUser(user, reason);
                 await TelegramBot.notifyBan(telegramId, reason);
-                await this.loadAdminData();
-                this.renderUsers();
-                this.closeUserDetails();
+                await this.loadAdminData(); this.renderUsers(); this.closeUserDetails();
                 Utils.showToast('User banned', 'success');
             } catch (error) { Utils.showToast('Failed to ban user', 'error'); }
             finally { Utils.hideLoading(); }
@@ -310,31 +288,20 @@ const AdminApp = {
     },
     
     closeUserDetails() { document.getElementById('user-details-modal').classList.add('hidden'); },
-    
+
     // ===== ORDERS =====
     renderOrders() {
         const container = document.getElementById('admin-orders-list');
         if (!container) return;
-        
         let filtered = [...this.state.orders];
-        if (this.state.ordersFilter !== 'all') {
-            filtered = filtered.filter(o => o.status === this.state.ordersFilter);
-        }
+        if (this.state.ordersFilter !== 'all') filtered = filtered.filter(o => o.status === this.state.ordersFilter);
         filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        
-        if (filtered.length === 0) {
-            container.innerHTML = '<div class="empty-state"><i class="fas fa-shopping-cart"></i><p>No orders found</p></div>';
-            return;
-        }
-        
+        if (filtered.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fas fa-shopping-cart"></i><p>No orders found</p></div>'; return; }
         container.innerHTML = filtered.map(order => {
             const user = this.state.users.find(u => u.telegramId === order.telegramId);
             return `<div class="order-card">
                 <div class="order-header">
-                    <div class="order-user">
-                        <img src="${user?.photoUrl || this.getAvatar(order.telegramId)}" alt="User">
-                        <div><h4>${user?.firstName || 'User'} ${user?.lastName || ''}</h4><p>@${user?.username || 'N/A'}</p></div>
-                    </div>
+                    <div class="order-user"><img src="${user?.photoUrl || this.getAvatar(order.telegramId)}" alt="User"><div><h4>${user?.firstName || 'User'} ${user?.lastName || ''}</h4><p>@${user?.username || 'N/A'}</p></div></div>
                     <span class="status-badge ${order.status}">${order.status}</span>
                 </div>
                 <div class="order-body">
@@ -346,23 +313,16 @@ const AdminApp = {
                     ${order.apiOrderId ? `<div class="order-info-row api-row"><span>API Order:</span><strong>#${order.apiOrderId}</strong></div>` : ''}
                     ${order.apiStatus ? `<div class="order-info-row"><span>API Status:</span><strong class="api-status-${order.apiStatus?.toLowerCase().replace(/\s/g,'-')}">${order.apiStatus}</strong></div>` : ''}
                     ${order.link ? `<div class="order-info-row"><span>Game Link:</span><strong>${order.link}</strong></div>` : ''}
+                    ${order.g2bulkGameName ? `<div class="order-info-row"><span>Game:</span><strong>${order.g2bulkGameName}</strong></div>` : ''}
                     ${order.apiError ? `<div class="order-info-row error-row"><span>Error:</span><strong>${order.apiError}</strong></div>` : ''}
                     ${order.refundedAt ? `<div class="order-info-row refund-row"><span>Refunded:</span><strong>${Utils.formatCurrency(order.refundAmount || order.amount, order.currency)} at ${Utils.formatDate(order.refundedAt)}</strong></div>` : ''}
                     ${order.inputValues ? `<div class="order-inputs"><span>Input Values:</span><ul>${Object.entries(order.inputValues).map(([k, v]) => `<li><strong>${k}:</strong> ${v}</li>`).join('')}</ul></div>` : ''}
                     <div class="order-date"><i class="fas fa-clock"></i> ${Utils.formatDate(order.createdAt, 'long')}</div>
                 </div>
                 <div class="order-actions">
-                    ${order.status === 'pending' ? `
-                        <button class="btn btn-success" onclick="AdminApp.approveOrder('${order.id}')"><i class="fas fa-check"></i> Approve</button>
-                        <button class="btn btn-danger" onclick="AdminApp.rejectOrder('${order.id}')"><i class="fas fa-times"></i> Reject</button>
-                    ` : ''}
-                    ${order.status === 'processing' && order.apiOrderId ? `
-                        <button class="btn btn-info" onclick="AdminApp.checkOrderApiStatus('${order.id}')"><i class="fas fa-sync-alt"></i> Check Status</button>
-                    ` : ''}
-                    ${order.status === 'queued' ? `
-                        <button class="btn btn-warning" onclick="AdminApp.retryQueuedOrder('${order.id}')"><i class="fas fa-redo"></i> Retry Now</button>
-                        <button class="btn btn-danger" onclick="AdminApp.cancelQueuedOrder('${order.id}')"><i class="fas fa-times"></i> Cancel & Refund</button>
-                    ` : ''}
+                    ${order.status === 'pending' ? `<button class="btn btn-success" onclick="AdminApp.approveOrder('${order.id}')"><i class="fas fa-check"></i> Approve</button><button class="btn btn-danger" onclick="AdminApp.rejectOrder('${order.id}')"><i class="fas fa-times"></i> Reject</button>` : ''}
+                    ${order.status === 'processing' && order.apiOrderId ? `<button class="btn btn-info" onclick="AdminApp.checkOrderApiStatus('${order.id}')"><i class="fas fa-sync-alt"></i> Check Status</button>` : ''}
+                    ${order.status === 'queued' ? `<button class="btn btn-warning" onclick="AdminApp.retryQueuedOrder('${order.id}')"><i class="fas fa-redo"></i> Retry Now</button><button class="btn btn-danger" onclick="AdminApp.cancelQueuedOrder('${order.id}')"><i class="fas fa-times"></i> Cancel & Refund</button>` : ''}
                 </div>
             </div>`;
         }).join('');
@@ -381,8 +341,7 @@ const AdminApp = {
         try {
             const order = await Database.updateOrderStatus(orderId, 'approved', CONFIG.ADMIN_TELEGRAM_ID);
             await TelegramBot.notifyOrderStatus(order, 'approved');
-            await this.loadAdminData();
-            this.renderOrders();
+            await this.loadAdminData(); this.renderOrders();
             Utils.showToast('Order approved!', 'success');
         } catch (error) { Utils.showToast('Failed to approve', 'error'); }
         finally { Utils.hideLoading(); }
@@ -394,8 +353,7 @@ const AdminApp = {
         try {
             const order = await Database.updateOrderStatus(orderId, 'rejected', CONFIG.ADMIN_TELEGRAM_ID);
             await TelegramBot.notifyOrderStatus(order, 'rejected');
-            await this.loadAdminData();
-            this.renderOrders();
+            await this.loadAdminData(); this.renderOrders();
             Utils.showToast('Order rejected & refunded', 'success');
         } catch (error) { Utils.showToast('Failed to reject', 'error'); }
         finally { Utils.hideLoading(); }
@@ -404,30 +362,19 @@ const AdminApp = {
     async checkOrderApiStatus(orderId) {
         const order = this.state.orders.find(o => o.id === orderId);
         if (!order || !order.apiOrderId) return;
-        
         Utils.showLoading('Checking API status...');
         try {
             const result = await G2BulkAPI.checkStatus(order.apiOrderId);
             if (result && !result.error) {
                 const apiStatus = result.status;
                 let newStatus = order.status;
-                
                 if (apiStatus === 'Completed') newStatus = 'completed';
                 else if (apiStatus === 'Canceled' || apiStatus === 'Refunded') newStatus = 'failed';
                 else if (apiStatus === 'Partial') newStatus = 'partial';
-                
-                await Database.updateOrderApiStatus(order.id, {
-                    apiStatus: apiStatus,
-                    status: newStatus,
-                    apiCharge: result.charge || null
-                });
-                
-                await this.loadAdminData();
-                this.renderOrders();
+                await Database.updateOrderApiStatus(order.id, { apiStatus, status: newStatus, apiCharge: result.charge || null });
+                await this.loadAdminData(); this.renderOrders();
                 Utils.showToast(`API Status: ${apiStatus}`, 'success');
-            } else {
-                Utils.showToast('API Error: ' + (result?.error || 'Unknown'), 'error');
-            }
+            } else { Utils.showToast('API Error: ' + (result?.error || 'Unknown'), 'error'); }
         } catch (error) { Utils.showToast('Failed to check status', 'error'); }
         finally { Utils.hideLoading(); }
     },
@@ -435,46 +382,29 @@ const AdminApp = {
     async retryQueuedOrder(orderId) {
         const order = this.state.orders.find(o => o.id === orderId);
         if (!order) return;
-        
         Utils.showLoading('Retrying order...');
         try {
             const apiResult = await G2BulkAPI.placeOrder(order.serviceId, order.link, 1);
-            
             if (apiResult && apiResult.order) {
-                await Database.updateOrderApiStatus(order.id, {
-                    apiOrderId: apiResult.order,
-                    apiStatus: 'Processing',
-                    status: 'processing',
-                    apiError: null
-                });
-                Utils.showToast('âœ… Order is now processing!', 'success');
-            } else {
-                Utils.showToast('âŒ Retry failed: ' + (apiResult?.error || 'Unknown'), 'error');
-            }
-            
-            await this.loadAdminData();
-            this.renderOrders();
+                await Database.updateOrderApiStatus(order.id, { apiOrderId: apiResult.order, apiStatus: 'Processing', status: 'processing', apiError: null });
+                Utils.showToast('✅ Order is now processing!', 'success');
+            } else { Utils.showToast('❌ Retry failed: ' + (apiResult?.error || 'Unknown'), 'error'); }
+            await this.loadAdminData(); this.renderOrders();
         } catch (error) { Utils.showToast('Failed to retry', 'error'); }
         finally { Utils.hideLoading(); }
     },
     
     async cancelQueuedOrder(orderId) {
         if (!confirm('Cancel this order and refund the user?')) return;
-        
         Utils.showLoading('Canceling...');
         try {
-            await Database.updateOrderApiStatus(orderId, {
-                apiStatus: 'Canceled',
-                status: 'failed',
-                apiError: 'Canceled by admin'
-            });
-            await this.loadAdminData();
-            this.renderOrders();
+            await Database.updateOrderApiStatus(orderId, { apiStatus: 'Canceled', status: 'failed', apiError: 'Canceled by admin' });
+            await this.loadAdminData(); this.renderOrders();
             Utils.showToast('Order canceled & refunded', 'success');
         } catch (error) { Utils.showToast('Failed to cancel', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     // ===== TOPUPS =====
     renderTopups() {
         const container = document.getElementById('admin-topups-list');
@@ -522,7 +452,7 @@ const AdminApp = {
         } catch (error) { Utils.showToast('Failed to reject', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     // ===== CATEGORIES =====
     renderCategories() {
         const container = document.getElementById('admin-categories-list');
@@ -581,33 +511,38 @@ const AdminApp = {
         catch (error) { Utils.showToast('Failed to delete', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
-    // ===== PRODUCTS =====
+
+    // ===== PRODUCTS (MODIFIED - Auto Game Fields) =====
     renderProducts() {
         const container = document.getElementById('admin-products-list');
         const filterSelect = document.getElementById('filter-category');
         if (!container) return;
-        
         if (filterSelect) {
             const val = filterSelect.value;
             filterSelect.innerHTML = '<option value="all">All Categories</option>' + this.state.categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
             filterSelect.value = val || 'all';
         }
-        
         let filtered = [...this.state.products];
         if (filterSelect && filterSelect.value !== 'all') filtered = filtered.filter(p => p.categoryId === filterSelect.value);
-        
         if (filtered.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fas fa-box"></i><p>No products yet</p></div>'; return; }
-        
         container.innerHTML = filtered.map(product => {
             const cat = this.state.categories.find(c => c.id === product.categoryId);
+            // ★ Show game fields info for G2Bulk products
+            let gameFieldsInfo = '';
+            if (product.serviceId && product.g2bulkGameFields && product.g2bulkGameFields.length > 0) {
+                const fieldNames = product.g2bulkGameFields.map(f => f.name).join(', ');
+                gameFieldsInfo = `<p class="product-game-fields"><i class="fas fa-gamepad"></i> ${product.g2bulkGameName || 'Game'}: ${fieldNames}</p>`;
+            } else if (product.serviceId) {
+                gameFieldsInfo = `<p class="product-game-fields warning"><i class="fas fa-exclamation-triangle"></i> No game fields configured</p>`;
+            }
             return `<div class="product-card">
                 <div class="product-icon"><img src="${product.icon}" alt="${product.name}">${product.discount > 0 ? `<span class="discount-tag">-${product.discount}%</span>` : ''}</div>
                 <div class="product-info">
                     <h4>${product.name}</h4>
                     <p>${cat?.name || 'Unknown'}</p>
                     <div class="product-price">${product.discount > 0 ? `<span class="original">${Utils.formatCurrency(product.price, product.currency)}</span>` : ''}<span class="current">${Utils.formatCurrency(product.discountedPrice || product.price, product.currency)}</span></div>
-                    ${product.serviceId ? `<p class="product-api-info"><i class="fas fa-bolt"></i> Service #${product.serviceId} ${product.g2bulkRate ? `â€¢ $${product.g2bulkRate}/unit` : ''}</p>` : '<p class="product-manual"><i class="fas fa-hand-paper"></i> Manual</p>'}
+                    ${product.serviceId ? `<p class="product-api-info"><i class="fas fa-bolt"></i> Service #${product.serviceId} ${product.g2bulkRate ? `• $${product.g2bulkRate}/unit` : ''}</p>` : '<p class="product-manual"><i class="fas fa-hand-paper"></i> Manual</p>'}
+                    ${gameFieldsInfo}
                     <p class="product-delivery"><i class="fas fa-bolt"></i> ${product.serviceId ? 'Auto Delivery' : (product.deliveryTime === 'instant' ? 'Instant' : product.deliveryTime)}</p>
                 </div>
                 <div class="product-actions">
@@ -620,6 +555,7 @@ const AdminApp = {
     
     showAddProduct() {
         this.state.editingItem = null;
+        this.state.detectedGameFields = null;
         document.getElementById('product-modal-title').textContent = 'Add Product';
         document.getElementById('product-category').innerHTML = '<option value="">Select Category</option>' + this.state.categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
         document.getElementById('product-name').value = '';
@@ -635,6 +571,7 @@ const AdminApp = {
         document.getElementById('product-icon-preview').innerHTML = '';
         document.getElementById('product-icon-preview').classList.add('hidden');
         document.getElementById('service-lookup-result').classList.add('hidden');
+        this.removeGameFieldsPreview();
         document.getElementById('add-product-modal').classList.remove('hidden');
     },
     
@@ -642,6 +579,16 @@ const AdminApp = {
         const product = this.state.products.find(p => p.id === productId);
         if (!product) return;
         this.state.editingItem = product;
+        // ★ Restore detected game fields from saved product
+        if (product.g2bulkGameFields) {
+            this.state.detectedGameFields = {
+                gameName: product.g2bulkGameName || 'Game',
+                fields: product.g2bulkGameFields,
+                linkFormat: product.g2bulkLinkFormat || ''
+            };
+        } else {
+            this.state.detectedGameFields = null;
+        }
         document.getElementById('product-modal-title').textContent = 'Edit Product';
         document.getElementById('product-category').innerHTML = '<option value="">Select Category</option>' + this.state.categories.map(c => `<option value="${c.id}" ${c.id === product.categoryId ? 'selected' : ''}>${c.name}</option>`).join('');
         document.getElementById('product-name').value = product.name;
@@ -654,46 +601,86 @@ const AdminApp = {
         document.getElementById('product-g2bulk-min').value = product.g2bulkMin || '';
         document.getElementById('product-g2bulk-max').value = product.g2bulkMax || '';
         if (product.icon) { document.getElementById('product-icon-preview').innerHTML = `<img src="${product.icon}" alt="Icon">`; document.getElementById('product-icon-preview').classList.remove('hidden'); }
+        // ★ Show existing game fields
+        if (this.state.detectedGameFields) {
+            this.showGameFieldsPreview(this.state.detectedGameFields);
+        } else {
+            this.removeGameFieldsPreview();
+        }
         document.getElementById('add-product-modal').classList.remove('hidden');
     },
     
-    closeAddProduct() { document.getElementById('add-product-modal').classList.add('hidden'); this.state.editingItem = null; },
-    
+    closeAddProduct() { document.getElementById('add-product-modal').classList.add('hidden'); this.state.editingItem = null; this.state.detectedGameFields = null; },
+
+    // ★★★ NEW: Show detected game fields preview in product modal ★★★
+    showGameFieldsPreview(gameData) {
+        this.removeGameFieldsPreview();
+        const lookupResult = document.getElementById('service-lookup-result');
+        const previewDiv = document.createElement('div');
+        previewDiv.id = 'g2bulk-game-fields-preview';
+        previewDiv.className = 'g2bulk-game-fields-preview';
+        previewDiv.innerHTML = `
+            <div class="game-fields-card">
+                <div class="game-fields-header">
+                    <i class="fas fa-gamepad"></i>
+                    <h4>Auto-Detected Game Fields: ${gameData.gameName}</h4>
+                </div>
+                <div class="game-fields-list">
+                    ${gameData.fields.map((f, i) => `
+                        <div class="game-field-item">
+                            <span class="field-badge">${i + 1}</span>
+                            <div class="field-info">
+                                <strong>${f.name}</strong>
+                                <small>${f.placeholder}</small>
+                            </div>
+                            <span class="field-required">${f.required ? 'Required' : 'Optional'}</span>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="game-fields-link-format">
+                    <span><i class="fas fa-link"></i> Link Format:</span>
+                    <code>${gameData.linkFormat}</code>
+                </div>
+                <small class="game-fields-note"><i class="fas fa-info-circle"></i> Users will be asked to fill these fields when purchasing. The values will be sent to G2Bulk API automatically.</small>
+            </div>
+        `;
+        lookupResult.parentNode.insertBefore(previewDiv, lookupResult.nextSibling);
+    },
+
+    removeGameFieldsPreview() {
+        const existing = document.getElementById('g2bulk-game-fields-preview');
+        if (existing) existing.remove();
+    },
+
+    // ★★★ MODIFIED: lookupServiceId - now detects game fields ★★★
     async lookupServiceId() {
         const serviceId = document.getElementById('product-service-id').value;
         if (!serviceId) { Utils.showToast('Enter a Service ID first', 'warning'); return; }
-        
         const resultDiv = document.getElementById('service-lookup-result');
         resultDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Looking up...';
         resultDiv.classList.remove('hidden');
-        
         try {
             if (this.state.g2bulkServicesRaw.length === 0) {
                 const servicesResult = await G2BulkAPI.getServices();
                 this.state.g2bulkServicesRaw = servicesResult || [];
             }
-            
             const service = this.state.g2bulkServicesRaw.find(s => String(s.service) === String(serviceId));
-            
             if (service) {
-                resultDiv.innerHTML = `<div class="service-found">
-                    <i class="fas fa-check-circle"></i>
-                    <div><strong>${service.name}</strong><br>
-                    Rate: $${service.rate} | Min: ${service.min} | Max: ${service.max}<br>
-                    Category: ${service.category}</div>
-                </div>`;
+                resultDiv.innerHTML = `<div class="service-found"><i class="fas fa-check-circle"></i><div><strong>${service.name}</strong><br>Rate: $${service.rate} | Min: ${service.min} | Max: ${service.max}<br>Category: ${service.category}</div></div>`;
                 resultDiv.className = 'service-lookup-result valid';
-                
                 document.getElementById('product-g2bulk-rate').value = service.rate;
                 document.getElementById('product-g2bulk-min').value = service.min;
                 document.getElementById('product-g2bulk-max').value = service.max;
-                
-                if (!document.getElementById('product-name').value) {
-                    document.getElementById('product-name').value = service.name;
-                }
+                if (!document.getElementById('product-name').value) document.getElementById('product-name').value = service.name;
+                // ★ Auto-detect game fields
+                const detected = G2BULK_GAME_FIELDS.detect(service.name, service.category);
+                this.state.detectedGameFields = detected;
+                this.showGameFieldsPreview(detected);
             } else {
                 resultDiv.innerHTML = '<i class="fas fa-times-circle"></i> Service not found';
                 resultDiv.className = 'service-lookup-result invalid';
+                this.state.detectedGameFields = null;
+                this.removeGameFieldsPreview();
             }
         } catch (error) {
             resultDiv.innerHTML = '<i class="fas fa-exclamation-circle"></i> Lookup failed: ' + error.message;
@@ -703,18 +690,11 @@ const AdminApp = {
     
     async openG2BulkServiceBrowser() {
         document.getElementById('g2bulk-browser-modal').classList.remove('hidden');
-        
         if (this.state.g2bulkServicesRaw.length === 0) {
             document.getElementById('g2bulk-browser-list').innerHTML = '<p>Loading services...</p>';
-            try {
-                const result = await G2BulkAPI.getServices();
-                this.state.g2bulkServicesRaw = result || [];
-            } catch (e) {
-                document.getElementById('g2bulk-browser-list').innerHTML = '<p>Failed to load services</p>';
-                return;
-            }
+            try { const result = await G2BulkAPI.getServices(); this.state.g2bulkServicesRaw = result || []; }
+            catch (e) { document.getElementById('g2bulk-browser-list').innerHTML = '<p>Failed to load services</p>'; return; }
         }
-        
         this.renderBrowserServices(this.state.g2bulkServicesRaw.slice(0, 50));
     },
     
@@ -734,30 +714,28 @@ const AdminApp = {
     
     filterBrowserServices() {
         const query = document.getElementById('g2bulk-browser-search').value.toLowerCase();
-        const filtered = this.state.g2bulkServicesRaw.filter(s => 
-            s.name.toLowerCase().includes(query) || 
-            String(s.service).includes(query) ||
-            (s.category && s.category.toLowerCase().includes(query))
-        );
+        const filtered = this.state.g2bulkServicesRaw.filter(s => s.name.toLowerCase().includes(query) || String(s.service).includes(query) || (s.category && s.category.toLowerCase().includes(query)));
         this.renderBrowserServices(filtered);
     },
-    
+
+    // ★★★ MODIFIED: selectBrowserService - now detects game fields ★★★
     selectBrowserService(serviceId) {
         const service = this.state.g2bulkServicesRaw.find(s => s.service === serviceId);
         if (!service) return;
-        
         document.getElementById('product-service-id').value = service.service;
         document.getElementById('product-g2bulk-rate').value = service.rate;
         document.getElementById('product-g2bulk-min').value = service.min;
         document.getElementById('product-g2bulk-max').value = service.max;
-        if (!document.getElementById('product-name').value) {
-            document.getElementById('product-name').value = service.name;
-        }
-        
+        if (!document.getElementById('product-name').value) document.getElementById('product-name').value = service.name;
+        // ★ Auto-detect game fields
+        const detected = G2BULK_GAME_FIELDS.detect(service.name, service.category);
+        this.state.detectedGameFields = detected;
+        this.showGameFieldsPreview(detected);
         this.closeG2BulkBrowser();
-        Utils.showToast(`Selected: #${service.service} - ${service.name}`, 'success');
+        Utils.showToast(`Selected: #${service.service} - ${service.name} (${detected.gameName})`, 'success');
     },
-    
+
+    // ★★★ MODIFIED: saveProduct - now saves game fields ★★★
     async saveProduct() {
         const categoryId = document.getElementById('product-category').value;
         const name = document.getElementById('product-name').value.trim();
@@ -770,9 +748,7 @@ const AdminApp = {
         const g2bulkMin = document.getElementById('product-g2bulk-min').value;
         const g2bulkMax = document.getElementById('product-g2bulk-max').value;
         const iconInput = document.getElementById('product-icon');
-        
         if (!categoryId || !name || isNaN(price)) { Utils.showToast('Please fill all required fields', 'warning'); return; }
-        
         Utils.showLoading('Saving...');
         try {
             let icon = this.state.editingItem?.icon || '';
@@ -785,25 +761,25 @@ const AdminApp = {
                 icon = result.data.url;
             }
             if (!icon && !this.state.editingItem) { Utils.showToast('Please upload icon', 'warning'); Utils.hideLoading(); return; }
-            
             let g2bulkServiceName = '';
             if (serviceId && this.state.g2bulkServicesRaw.length > 0) {
                 const svc = this.state.g2bulkServicesRaw.find(s => String(s.service) === String(serviceId));
                 if (svc) g2bulkServiceName = svc.name;
             }
-            
             const data = {
                 categoryId, name, price, currency, discount, deliveryTime, icon,
                 serviceId: serviceId ? parseInt(serviceId) : null,
                 g2bulkRate: g2bulkRate || null,
                 g2bulkMin: g2bulkMin ? parseInt(g2bulkMin) : null,
                 g2bulkMax: g2bulkMax ? parseInt(g2bulkMax) : null,
-                g2bulkServiceName: g2bulkServiceName
+                g2bulkServiceName: g2bulkServiceName,
+                // ★★★ NEW: Save auto-detected game fields with product ★★★
+                g2bulkGameFields: this.state.detectedGameFields?.fields || null,
+                g2bulkLinkFormat: this.state.detectedGameFields?.linkFormat || null,
+                g2bulkGameName: this.state.detectedGameFields?.gameName || null
             };
-            
             if (this.state.editingItem) { await Database.updateProduct(this.state.editingItem.id, data); Utils.showToast('Product updated!', 'success'); }
             else { await Database.createProduct(data); Utils.showToast('Product created!', 'success'); }
-            
             await this.loadAdminData(); this.renderProducts(); this.closeAddProduct();
         } catch (error) { Utils.showToast('Failed to save: ' + error.message, 'error'); }
         finally { Utils.hideLoading(); }
@@ -816,80 +792,158 @@ const AdminApp = {
         catch (error) { Utils.showToast('Failed to delete', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
-    // ===== G2BULK SERVICES PAGE =====
-    
+
+    // ===== G2BULK SERVICES PAGE (MODIFIED - Add Funds) =====
     renderG2BulkPage() {
         this.refreshApiBalance();
+        this.injectAddFundsSection();
         if (this.state.g2bulkServicesRaw.length > 0) {
             this.renderG2BulkServicesList(this.state.g2bulkServicesRaw);
         }
     },
-    
+
+    // ★★★ NEW: Inject Add Funds section into G2Bulk page ★★★
+    injectAddFundsSection() {
+        const balanceCard = document.getElementById('g2bulk-balance-card');
+        if (!balanceCard) return;
+        // Check if already injected
+        if (document.getElementById('g2bulk-add-funds-section')) return;
+        const fundsSection = document.createElement('div');
+        fundsSection.id = 'g2bulk-add-funds-section';
+        fundsSection.className = 'g2bulk-add-funds-section';
+        fundsSection.innerHTML = `
+            <div class="add-funds-card">
+                <div class="add-funds-header">
+                    <i class="fas fa-plus-circle"></i>
+                    <h4>Add Funds to G2Bulk</h4>
+                </div>
+                <div class="add-funds-body">
+                    <div class="add-funds-form" id="add-funds-form">
+                        <div class="form-group">
+                            <label>Amount (USD)</label>
+                            <input type="number" id="add-funds-amount" placeholder="Enter amount in USD" min="1" step="0.01" style="width:100%;padding:10px 14px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(255,255,255,0.05);color:#fff;font-size:15px;">
+                        </div>
+                        <div class="form-group">
+                            <label>Payment Method</label>
+                            <select id="add-funds-method" style="width:100%;padding:10px 14px;border:1px solid rgba(255,255,255,0.15);border-radius:10px;background:rgba(255,255,255,0.08);color:#fff;font-size:15px;">
+                                <option value="balance">Account Balance</option>
+                                <option value="paypal">PayPal</option>
+                                <option value="crypto">Cryptocurrency</option>
+                                <option value="card">Credit/Debit Card</option>
+                                <option value="bank">Bank Transfer</option>
+                            </select>
+                        </div>
+                        <div class="add-funds-actions" style="display:flex;gap:10px;margin-top:12px;">
+                            <button class="btn btn-primary" onclick="AdminApp.submitAddFunds()" style="flex:1;">
+                                <i class="fas fa-wallet"></i> Add Funds
+                            </button>
+                            <button class="btn btn-secondary" onclick="AdminApp.openG2BulkPanel()" style="flex:1;">
+                                <i class="fas fa-external-link-alt"></i> Open G2Bulk Panel
+                            </button>
+                        </div>
+                    </div>
+                    <div id="add-funds-result" class="add-funds-result" style="display:none;"></div>
+                </div>
+            </div>
+        `;
+        balanceCard.parentNode.insertBefore(fundsSection, balanceCard.nextSibling);
+    },
+
+    // ★★★ NEW: Submit Add Funds to G2Bulk API ★★★
+    async submitAddFunds() {
+        const amount = parseFloat(document.getElementById('add-funds-amount').value);
+        const method = document.getElementById('add-funds-method').value;
+        const resultDiv = document.getElementById('add-funds-result');
+        if (!amount || amount <= 0) { Utils.showToast('Please enter a valid amount', 'warning'); return; }
+        if (!confirm(`Add $${amount.toFixed(2)} to G2Bulk balance via ${method}?`)) return;
+        Utils.showLoading('Processing funds...');
+        try {
+            const result = await G2BulkAPI.addFunds(amount, method);
+            if (result && !result.error) {
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = `
+                    <div style="padding:14px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);border-radius:10px;margin-top:12px;">
+                        <p style="color:#10b981;font-weight:600;margin:0;"><i class="fas fa-check-circle"></i> Funds Added Successfully!</p>
+                        <p style="color:rgba(255,255,255,0.7);margin:6px 0 0;font-size:13px;">Amount: $${amount.toFixed(2)} | Method: ${method}</p>
+                        ${result.balance ? `<p style="color:rgba(255,255,255,0.7);margin:4px 0 0;font-size:13px;">New Balance: $${parseFloat(result.balance).toFixed(4)}</p>` : ''}
+                    </div>
+                `;
+                document.getElementById('add-funds-amount').value = '';
+                await this.refreshApiBalance();
+                Utils.showToast(`$${amount.toFixed(2)} added to G2Bulk!`, 'success');
+            } else {
+                const errorMsg = result?.error || 'Unknown error';
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = `
+                    <div style="padding:14px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:10px;margin-top:12px;">
+                        <p style="color:#ef4444;font-weight:600;margin:0;"><i class="fas fa-exclamation-triangle"></i> Failed to Add Funds</p>
+                        <p style="color:rgba(255,255,255,0.7);margin:6px 0 0;font-size:13px;">Error: ${errorMsg}</p>
+                        <p style="color:rgba(255,255,255,0.5);margin:6px 0 0;font-size:12px;">Try adding funds directly through the G2Bulk panel website instead.</p>
+                    </div>
+                `;
+                Utils.showToast('Failed: ' + errorMsg, 'error');
+            }
+        } catch (error) {
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `
+                <div style="padding:14px;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:10px;margin-top:12px;">
+                    <p style="color:#ef4444;font-weight:600;margin:0;"><i class="fas fa-exclamation-triangle"></i> Request Failed</p>
+                    <p style="color:rgba(255,255,255,0.7);margin:6px 0 0;font-size:13px;">${error.message}</p>
+                    <p style="color:rgba(255,255,255,0.5);margin:6px 0 0;font-size:12px;">The G2Bulk API may not support direct fund addition. Please add funds through their website.</p>
+                </div>
+            `;
+            Utils.showToast('Request failed', 'error');
+        }
+        finally { Utils.hideLoading(); }
+    },
+
+    // ★★★ NEW: Open G2Bulk Panel website ★★★
+    openG2BulkPanel() {
+        const panelUrl = CONFIG.G2BULK?.PANEL_URL || CONFIG.G2BULK?.API_URL?.replace('/api/v2', '') || 'https://g2bulk.com';
+        window.open(panelUrl, '_blank');
+    },
+
     async refreshG2BulkServices() {
         Utils.showLoading('Loading G2Bulk services...');
         try {
             const result = await G2BulkAPI.getServices();
             this.state.g2bulkServicesRaw = result || [];
-            
             const cats = [...new Set(this.state.g2bulkServicesRaw.map(s => s.category).filter(Boolean))];
             this.state.g2bulkCategories = cats.sort();
-            
             const catFilter = document.getElementById('g2bulk-category-filter');
-            if (catFilter) {
-                catFilter.innerHTML = '<option value="all">All Categories</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
-            }
-            
+            if (catFilter) catFilter.innerHTML = '<option value="all">All Categories</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
             this.renderG2BulkServicesList(this.state.g2bulkServicesRaw);
             Utils.showToast(`Loaded ${this.state.g2bulkServicesRaw.length} services`, 'success');
-        } catch (error) {
-            Utils.showToast('Failed to load services: ' + error.message, 'error');
-        } finally {
-            Utils.hideLoading();
-        }
+        } catch (error) { Utils.showToast('Failed to load services: ' + error.message, 'error'); }
+        finally { Utils.hideLoading(); }
     },
     
     filterG2BulkServices() {
         const query = (document.getElementById('g2bulk-search')?.value || '').toLowerCase();
         const catFilter = document.getElementById('g2bulk-category-filter')?.value || 'all';
-        
         let filtered = [...this.state.g2bulkServicesRaw];
-        
-        if (catFilter !== 'all') {
-            filtered = filtered.filter(s => s.category === catFilter);
-        }
-        
-        if (query) {
-            filtered = filtered.filter(s => 
-                s.name.toLowerCase().includes(query) || 
-                String(s.service).includes(query) ||
-                (s.category && s.category.toLowerCase().includes(query))
-            );
-        }
-        
+        if (catFilter !== 'all') filtered = filtered.filter(s => s.category === catFilter);
+        if (query) filtered = filtered.filter(s => s.name.toLowerCase().includes(query) || String(s.service).includes(query) || (s.category && s.category.toLowerCase().includes(query)));
         this.renderG2BulkServicesList(filtered);
     },
     
     renderG2BulkServicesList(services) {
         const container = document.getElementById('g2bulk-services-list');
         const countEl = document.getElementById('g2bulk-services-count');
-        
         if (countEl) countEl.textContent = `${services.length} services found`;
-        
-        if (services.length === 0) {
-            container.innerHTML = '<div class="empty-state"><i class="fas fa-search"></i><p>No services found</p></div>';
-            return;
-        }
-        
+        if (services.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fas fa-search"></i><p>No services found</p></div>'; return; }
         const display = services.slice(0, 200);
-        
-        container.innerHTML = display.map(service => `
-            <div class="g2bulk-service-card">
+        container.innerHTML = display.map(service => {
+            // ★ Show detected game type for each service
+            const detected = G2BULK_GAME_FIELDS.detect(service.name, service.category);
+            const gameTag = detected.gameName !== 'Unknown Game' ? `<span class="service-game-tag"><i class="fas fa-gamepad"></i> ${detected.gameName} (${detected.fields.map(f=>f.name).join(', ')})</span>` : '';
+            return `<div class="g2bulk-service-card">
                 <div class="service-header">
                     <span class="service-id-badge">#${service.service}</span>
                     <span class="service-category-badge">${service.category || 'N/A'}</span>
                 </div>
                 <div class="service-name">${service.name}</div>
+                ${gameTag}
                 <div class="service-details">
                     <div class="service-detail"><span>Rate:</span><strong>$${service.rate}</strong></div>
                     <div class="service-detail"><span>Min:</span><strong>${service.min}</strong></div>
@@ -898,26 +952,27 @@ const AdminApp = {
                 <button class="btn btn-primary btn-sm btn-full" onclick="AdminApp.quickAddProduct(${service.service})">
                     <i class="fas fa-plus"></i> Add as Product
                 </button>
-            </div>
-        `).join('');
-        
-        if (services.length > 200) {
-            container.innerHTML += `<p class="load-more-text">Showing 200 of ${services.length} services. Use search to find more.</p>`;
-        }
+            </div>`;
+        }).join('');
+        if (services.length > 200) container.innerHTML += `<p class="load-more-text">Showing 200 of ${services.length} services. Use search to find more.</p>`;
     },
-    
+
+    // ★★★ MODIFIED: quickAddProduct - now detects game fields ★★★
     quickAddProduct(serviceId) {
         const service = this.state.g2bulkServicesRaw.find(s => s.service === serviceId);
         if (!service) return;
-        
         this.showAddProduct();
         document.getElementById('product-service-id').value = service.service;
         document.getElementById('product-name').value = service.name;
         document.getElementById('product-g2bulk-rate').value = service.rate;
         document.getElementById('product-g2bulk-min').value = service.min;
         document.getElementById('product-g2bulk-max').value = service.max;
+        // ★ Auto-detect game fields
+        const detected = G2BULK_GAME_FIELDS.detect(service.name, service.category);
+        this.state.detectedGameFields = detected;
+        this.showGameFieldsPreview(detected);
     },
-    
+
     // ===== BANNERS =====
     renderBanners() { this.renderBannerType(this.state.currentBannerType); },
     
@@ -928,7 +983,6 @@ const AdminApp = {
         if (activeTab) activeTab.classList.add('active');
         document.getElementById('banner-type1').classList.toggle('hidden', type !== 'type1');
         document.getElementById('banner-type2').classList.toggle('hidden', type !== 'type2');
-        
         const banners = type === 'type1' ? (this.state.banners.type1 || []) : (this.state.banners.type2 || []);
         const container = document.getElementById(`banners-${type}-list`);
         if (!container) return;
@@ -983,52 +1037,28 @@ const AdminApp = {
         catch (error) { Utils.showToast('Failed to delete', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
-    // ===== INPUT TABLES (COMPLETELY REWRITTEN - JSON Config System) =====
+
+    // ===== INPUT TABLES =====
     renderInputTables() {
         const container = document.getElementById('admin-input-tables-list');
         if (!container) return;
         if (this.state.inputTables.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fas fa-keyboard"></i><p>No input tables yet</p></div>'; return; }
         container.innerHTML = this.state.inputTables.map(table => {
             const cat = this.state.categories.find(c => c.id === table.categoryId);
-            
-            // Parse checker config for display
             let checkerInfo = '';
             if (table.checkerEnabled && table.checkerConfig) {
                 let config = table.checkerConfig;
-                if (typeof config === 'string') {
-                    try { config = JSON.parse(config); } catch(e) {}
-                }
+                if (typeof config === 'string') { try { config = JSON.parse(config); } catch(e) {} }
                 if (config && typeof config === 'object') {
                     const url = config.url || config.apiUrl || '';
                     const method = config.method || 'POST';
-                    checkerInfo = `
-                        <div class="checker-config-preview">
-                            <span class="checker-badge"><i class="fas fa-search"></i> ID Checker Enabled</span>
-                            <span class="checker-method-badge ${method.toLowerCase()}">${method}</span>
-                            <span class="checker-url-preview" title="${url}">${url.length > 40 ? url.substring(0, 40) + '...' : url}</span>
-                        </div>
-                    `;
+                    checkerInfo = `<div class="checker-config-preview"><span class="checker-badge"><i class="fas fa-search"></i> ID Checker Enabled</span><span class="checker-method-badge ${method.toLowerCase()}">${method}</span><span class="checker-url-preview" title="${url}">${url.length > 40 ? url.substring(0, 40) + '...' : url}</span></div>`;
                 }
             }
-            
-            return `<div class="input-table-card">
-                <div class="input-table-icon"><i class="fas fa-keyboard"></i></div>
-                <div class="input-table-info">
-                    <h4>${table.name}</h4>
-                    <p>${cat?.name || 'Unknown'}</p>
-                    <p class="placeholder">"${table.placeholder}"</p>
-                    ${checkerInfo}
-                </div>
-                <div class="input-table-actions">
-                    <button class="action-btn edit" onclick="AdminApp.editInputTable('${table.id}')"><i class="fas fa-edit"></i></button>
-                    <button class="action-btn delete" onclick="AdminApp.deleteInputTable('${table.id}')"><i class="fas fa-trash"></i></button>
-                </div>
-            </div>`;
+            return `<div class="input-table-card"><div class="input-table-icon"><i class="fas fa-keyboard"></i></div><div class="input-table-info"><h4>${table.name}</h4><p>${cat?.name || 'Unknown'}</p><p class="placeholder">"${table.placeholder}"</p>${checkerInfo}</div><div class="input-table-actions"><button class="action-btn edit" onclick="AdminApp.editInputTable('${table.id}')"><i class="fas fa-edit"></i></button><button class="action-btn delete" onclick="AdminApp.deleteInputTable('${table.id}')"><i class="fas fa-trash"></i></button></div></div>`;
         }).join('');
     },
     
-    // COMPLETELY REWRITTEN: Show Add Input Table with JSON Config
     showAddInputTable() {
         this.state.editingItem = null;
         document.getElementById('input-table-modal-title').textContent = 'Add Input Table';
@@ -1046,7 +1076,6 @@ const AdminApp = {
         document.getElementById('add-input-table-modal').classList.remove('hidden');
     },
     
-    // COMPLETELY REWRITTEN: Edit Input Table with JSON Config
     editInputTable(tableId) {
         const table = this.state.inputTables.find(t => t.id === tableId);
         if (!table) return;
@@ -1055,44 +1084,25 @@ const AdminApp = {
         document.getElementById('input-table-category').innerHTML = '<option value="">Select Category</option>' + this.state.categories.map(c => `<option value="${c.id}" ${c.id === table.categoryId ? 'selected' : ''}>${c.name}</option>`).join('');
         document.getElementById('input-table-name').value = table.name;
         document.getElementById('input-table-placeholder').value = table.placeholder;
-        
         document.getElementById('checker-enabled').checked = table.checkerEnabled || false;
         document.getElementById('checker-json-section').classList.toggle('hidden', !table.checkerEnabled);
-        
         if (table.checkerConfig) {
-            let configStr = '';
-            if (typeof table.checkerConfig === 'string') {
-                configStr = table.checkerConfig;
-            } else {
-                configStr = JSON.stringify(table.checkerConfig, null, 2);
-            }
+            let configStr = typeof table.checkerConfig === 'string' ? table.checkerConfig : JSON.stringify(table.checkerConfig, null, 2);
             document.getElementById('checker-json-config').value = configStr;
-            
-            // Show preview
             this.previewCheckerConfig();
-        } else {
-            document.getElementById('checker-json-config').value = '';
-        }
-        
+        } else { document.getElementById('checker-json-config').value = ''; }
         document.getElementById('checker-test-section').classList.toggle('hidden', !table.checkerEnabled);
         document.getElementById('checker-test-value').value = '';
         document.getElementById('checker-test-result').classList.add('hidden');
-        
         document.getElementById('add-input-table-modal').classList.remove('hidden');
     },
     
     closeAddInputTable() { document.getElementById('add-input-table-modal').classList.add('hidden'); this.state.editingItem = null; },
     
-    // NEW: Preview parsed JSON config
     previewCheckerConfig() {
         const jsonStr = document.getElementById('checker-json-config').value.trim();
         const previewDiv = document.getElementById('checker-json-preview');
-        
-        if (!jsonStr) {
-            previewDiv.classList.add('hidden');
-            return;
-        }
-        
+        if (!jsonStr) { previewDiv.classList.add('hidden'); return; }
         try {
             const config = JSON.parse(jsonStr);
             const url = config.url || config.apiUrl || 'N/A';
@@ -1100,234 +1110,45 @@ const AdminApp = {
             const hasHeaders = config.headers && Object.keys(config.headers).length > 0;
             const hasBody = !!config.body || !!config.bodyTemplate;
             const rp = config.responsePath || config.response || {};
-            
-            // Extract required inputs from body
             let requiredInputs = [];
-            if (config.body) {
-                const bodyStr = JSON.stringify(config.body);
-                const matches = bodyStr.match(/\{\{([^}]+)\}\}/g) || [];
-                requiredInputs = matches.map(m => m.replace(/\{\{|\}\}/g, ''));
-            }
-            
-            previewDiv.innerHTML = `
-                <div class="json-preview-card">
-                    <h4><i class="fas fa-check-circle" style="color: var(--success);"></i> Config Parsed Successfully</h4>
-                    <div class="preview-grid">
-                        <div class="preview-item">
-                            <span class="preview-label">URL</span>
-                            <span class="preview-value url">${url}</span>
-                        </div>
-                        <div class="preview-item">
-                            <span class="preview-label">Method</span>
-                            <span class="preview-value"><span class="method-badge ${method.toLowerCase()}">${method}</span></span>
-                        </div>
-                        <div class="preview-item">
-                            <span class="preview-label">Headers</span>
-                            <span class="preview-value">${hasHeaders ? Object.keys(config.headers).join(', ') : 'Default'}</span>
-                        </div>
-                        ${hasBody ? `<div class="preview-item">
-                            <span class="preview-label">Body</span>
-                            <span class="preview-value">âœ… Configured</span>
-                        </div>` : ''}
-                        ${requiredInputs.length > 0 ? `<div class="preview-item">
-                            <span class="preview-label">Required Inputs</span>
-                            <span class="preview-value">${requiredInputs.map(r => `<span class="input-ref-tag">{{${r}}}</span>`).join(' ')}</span>
-                        </div>` : ''}
-                        <div class="preview-item">
-                            <span class="preview-label">Response Mapping</span>
-                            <span class="preview-value">
-                                ${rp.valid ? `Valid: <code>${rp.valid}</code>` : ''}
-                                ${rp.nickname ? ` | Nickname: <code>${rp.nickname}</code>` : ''}
-                                ${rp.country ? ` | Country: <code>${rp.country}</code>` : ''}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            `;
+            if (config.body) { const bodyStr = JSON.stringify(config.body); const matches = bodyStr.match(/\{\{([^}]+)\}\}/g) || []; requiredInputs = matches.map(m => m.replace(/\{\{|\}\}/g, '')); }
+            previewDiv.innerHTML = `<div class="json-preview-card"><h4><i class="fas fa-check-circle" style="color: var(--success);"></i> Config Parsed Successfully</h4><div class="preview-grid"><div class="preview-item"><span class="preview-label">URL</span><span class="preview-value url">${url}</span></div><div class="preview-item"><span class="preview-label">Method</span><span class="preview-value"><span class="method-badge ${method.toLowerCase()}">${method}</span></span></div><div class="preview-item"><span class="preview-label">Headers</span><span class="preview-value">${hasHeaders ? Object.keys(config.headers).join(', ') : 'Default'}</span></div>${hasBody ? `<div class="preview-item"><span class="preview-label">Body</span><span class="preview-value">✅ Configured</span></div>` : ''}${requiredInputs.length > 0 ? `<div class="preview-item"><span class="preview-label">Required Inputs</span><span class="preview-value">${requiredInputs.map(r => `<span class="input-ref-tag">{{${r}}}</span>`).join(' ')}</span></div>` : ''}<div class="preview-item"><span class="preview-label">Response Mapping</span><span class="preview-value">${rp.valid ? `Valid: <code>${rp.valid}</code>` : ''}${rp.nickname ? ` | Nickname: <code>${rp.nickname}</code>` : ''}${rp.country ? ` | Country: <code>${rp.country}</code>` : ''}</span></div></div></div>`;
             previewDiv.classList.remove('hidden');
-            
-            // Show test section
             document.getElementById('checker-test-section').classList.remove('hidden');
-            
         } catch (e) {
-            previewDiv.innerHTML = `
-                <div class="json-preview-card error">
-                    <h4><i class="fas fa-exclamation-triangle" style="color: var(--danger);"></i> Invalid JSON</h4>
-                    <p class="error-text">${e.message}</p>
-                </div>
-            `;
+            previewDiv.innerHTML = `<div class="json-preview-card error"><h4><i class="fas fa-exclamation-triangle" style="color: var(--danger);"></i> Invalid JSON</h4><p class="error-text">${e.message}</p></div>`;
             previewDiv.classList.remove('hidden');
             document.getElementById('checker-test-section').classList.add('hidden');
         }
     },
     
-    // NEW: Load sample JSON configs
     loadSampleConfig(type) {
         const samples = {
-            'rapidapi-mlbb': `{
-  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",
-  "method": "POST",
-  "headers": {
-    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",
-    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",
-    "Content-Type": "application/json"
-  },
-  "body": {
-    "game": "mobile-legends",
-    "userid": "{{value}}",
-    "zoneid": "{{Zone ID}}"
-  },
-  "responsePath": {
-    "valid": "success",
-    "nickname": "data.username",
-    "country": "data.country"
-  },
-  "errorMessage": "Game ID not found! Please check your User ID and Zone ID."
-}`,
-            'rapidapi-ff': `{
-  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",
-  "method": "POST",
-  "headers": {
-    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",
-    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",
-    "Content-Type": "application/json"
-  },
-  "body": {
-    "game": "free-fire",
-    "userid": "{{value}}"
-  },
-  "responsePath": {
-    "valid": "success",
-    "nickname": "data.username",
-    "country": "data.country"
-  },
-  "errorMessage": "Free Fire ID not found! Please check and try again."
-}`,
-            'rapidapi-genshin': `{
-  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",
-  "method": "POST",
-  "headers": {
-    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",
-    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",
-    "Content-Type": "application/json"
-  },
-  "body": {
-    "game": "genshin-impact",
-    "userid": "{{value}}"
-  },
-  "responsePath": {
-    "valid": "success",
-    "nickname": "data.username",
-    "country": "data.country"
-  },
-  "errorMessage": "Genshin Impact UID not found!"
-}`,
-            'rapidapi-pubg': `{
-  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",
-  "method": "POST",
-  "headers": {
-    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",
-    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",
-    "Content-Type": "application/json"
-  },
-  "body": {
-    "game": "pubg-mobile",
-    "userid": "{{value}}"
-  },
-  "responsePath": {
-    "valid": "success",
-    "nickname": "data.username",
-    "country": "data.country"
-  },
-  "errorMessage": "PUBG Mobile ID not found!"
-}`,
-            'rapidapi-honkai': `{
-  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",
-  "method": "POST",
-  "headers": {
-    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",
-    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",
-    "Content-Type": "application/json"
-  },
-  "body": {
-    "game": "honkai-star-rail",
-    "userid": "{{value}}"
-  },
-  "responsePath": {
-    "valid": "success",
-    "nickname": "data.username",
-    "country": "data.country"
-  },
-  "errorMessage": "Honkai Star Rail UID not found!"
-}`,
-            'custom-get': `{
-  "url": "https://your-api.com/check?id={{value}}",
-  "method": "GET",
-  "headers": {
-    "Authorization": "Bearer YOUR_TOKEN"
-  },
-  "responsePath": {
-    "valid": "status",
-    "nickname": "data.name",
-    "country": "data.region"
-  },
-  "errorMessage": "ID not found!"
-}`,
-            'custom-post': `{
-  "url": "https://your-api.com/verify",
-  "method": "POST",
-  "headers": {
-    "Content-Type": "application/json",
-    "Authorization": "Bearer YOUR_TOKEN"
-  },
-  "body": {
-    "user_id": "{{value}}",
-    "server_id": "{{Server ID}}"
-  },
-  "responsePath": {
-    "valid": "success",
-    "nickname": "result.player_name",
-    "country": "result.country_code"
-  },
-  "errorMessage": "Player not found!"
-}`
+            'rapidapi-mlbb': `{\n  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",\n  "method": "POST",\n  "headers": {\n    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",\n    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",\n    "Content-Type": "application/json"\n  },\n  "body": {\n    "game": "mobile-legends",\n    "userid": "{{value}}",\n    "zoneid": "{{Zone ID}}"\n  },\n  "responsePath": {\n    "valid": "success",\n    "nickname": "data.username",\n    "country": "data.country"\n  },\n  "errorMessage": "Game ID not found! Please check your User ID and Zone ID."\n}`,
+            'rapidapi-ff': `{\n  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",\n  "method": "POST",\n  "headers": {\n    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",\n    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",\n    "Content-Type": "application/json"\n  },\n  "body": {\n    "game": "free-fire",\n    "userid": "{{value}}"\n  },\n  "responsePath": {\n    "valid": "success",\n    "nickname": "data.username",\n    "country": "data.country"\n  },\n  "errorMessage": "Free Fire ID not found!"\n}`,
+            'rapidapi-genshin': `{\n  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",\n  "method": "POST",\n  "headers": {\n    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",\n    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",\n    "Content-Type": "application/json"\n  },\n  "body": {\n    "game": "genshin-impact",\n    "userid": "{{value}}"\n  },\n  "responsePath": {\n    "valid": "success",\n    "nickname": "data.username",\n    "country": "data.country"\n  },\n  "errorMessage": "Genshin Impact UID not found!"\n}`,
+            'rapidapi-pubg': `{\n  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",\n  "method": "POST",\n  "headers": {\n    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",\n    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",\n    "Content-Type": "application/json"\n  },\n  "body": {\n    "game": "pubg-mobile",\n    "userid": "{{value}}"\n  },\n  "responsePath": {\n    "valid": "success",\n    "nickname": "data.username",\n    "country": "data.country"\n  },\n  "errorMessage": "PUBG Mobile ID not found!"\n}`,
+            'rapidapi-honkai': `{\n  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",\n  "method": "POST",\n  "headers": {\n    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",\n    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",\n    "Content-Type": "application/json"\n  },\n  "body": {\n    "game": "honkai-star-rail",\n    "userid": "{{value}}"\n  },\n  "responsePath": {\n    "valid": "success",\n    "nickname": "data.username",\n    "country": "data.country"\n  },\n  "errorMessage": "Honkai Star Rail UID not found!"\n}`,
+            'custom-get': `{\n  "url": "https://your-api.com/check?id={{value}}",\n  "method": "GET",\n  "headers": {\n    "Authorization": "Bearer YOUR_TOKEN"\n  },\n  "responsePath": {\n    "valid": "status",\n    "nickname": "data.name",\n    "country": "data.region"\n  },\n  "errorMessage": "ID not found!"\n}`,
+            'custom-post': `{\n  "url": "https://your-api.com/verify",\n  "method": "POST",\n  "headers": {\n    "Content-Type": "application/json",\n    "Authorization": "Bearer YOUR_TOKEN"\n  },\n  "body": {\n    "user_id": "{{value}}",\n    "server_id": "{{Server ID}}"\n  },\n  "responsePath": {\n    "valid": "success",\n    "nickname": "result.player_name",\n    "country": "result.country_code"\n  },\n  "errorMessage": "Player not found!"\n}`
         };
-        
         const config = samples[type];
-        if (config) {
-            document.getElementById('checker-json-config').value = config;
-            this.previewCheckerConfig();
-            Utils.showToast('Sample config loaded! Remember to replace YOUR_RAPIDAPI_KEY_HERE', 'info');
-        }
+        if (config) { document.getElementById('checker-json-config').value = config; this.previewCheckerConfig(); Utils.showToast('Sample config loaded!', 'info'); }
     },
     
-    // COMPLETELY REWRITTEN: Save Input Table with JSON Config
     async saveInputTable() {
         const categoryId = document.getElementById('input-table-category').value;
         const name = document.getElementById('input-table-name').value.trim();
         const placeholder = document.getElementById('input-table-placeholder').value.trim();
         const checkerEnabled = document.getElementById('checker-enabled').checked;
-        
         if (!categoryId || !name || !placeholder) { Utils.showToast('Please fill all fields', 'warning'); return; }
-        
         let checkerConfig = null;
         if (checkerEnabled) {
             const jsonStr = document.getElementById('checker-json-config').value.trim();
             if (!jsonStr) { Utils.showToast('Please enter checker JSON config', 'warning'); return; }
-            
-            try {
-                checkerConfig = JSON.parse(jsonStr);
-                // Validate required fields
-                if (!checkerConfig.url && !checkerConfig.apiUrl) {
-                    Utils.showToast('Config must have "url" field', 'warning');
-                    return;
-                }
-            } catch (e) {
-                Utils.showToast('Invalid JSON: ' + e.message, 'error');
-                return;
-            }
+            try { checkerConfig = JSON.parse(jsonStr); if (!checkerConfig.url && !checkerConfig.apiUrl) { Utils.showToast('Config must have "url" field', 'warning'); return; } }
+            catch (e) { Utils.showToast('Invalid JSON: ' + e.message, 'error'); return; }
         }
-        
         Utils.showLoading('Saving...');
         try {
             const data = { categoryId, name, placeholder, checkerEnabled, checkerConfig };
@@ -1346,121 +1167,51 @@ const AdminApp = {
         finally { Utils.hideLoading(); }
     },
     
-    // COMPLETELY REWRITTEN: Test Checker with JSON Config
     async testChecker() {
         const testValue = document.getElementById('checker-test-value').value.trim();
         if (!testValue) { Utils.showToast('Enter a test value', 'warning'); return; }
-        
         const jsonStr = document.getElementById('checker-json-config').value.trim();
         if (!jsonStr) { Utils.showToast('Enter JSON config first', 'warning'); return; }
-        
         const resultDiv = document.getElementById('checker-test-result');
-        resultDiv.innerHTML = `
-            <div class="test-result-card loading">
-                <div class="checker-loading-content">
-                    <div class="checker-spinner"></div>
-                    <span>Testing Game ID Checker...</span>
-                </div>
-            </div>
-        `;
+        resultDiv.innerHTML = `<div class="test-result-card loading"><div class="checker-loading-content"><div class="checker-spinner"></div><span>Testing Game ID Checker...</span></div></div>`;
         resultDiv.classList.remove('hidden');
-        
         try {
             let config;
-            try { config = JSON.parse(jsonStr); } 
-            catch(e) { 
-                resultDiv.innerHTML = `<div class="test-result-card error"><i class="fas fa-exclamation-triangle"></i> Invalid JSON: ${e.message}</div>`;
-                return; 
-            }
-            
-            // Build test input values from other test inputs if any
+            try { config = JSON.parse(jsonStr); } catch(e) { resultDiv.innerHTML = `<div class="test-result-card error"><i class="fas fa-exclamation-triangle"></i> Invalid JSON: ${e.message}</div>`; return; }
             const testInputValues = {};
             const requiredInputs = GameIdChecker.getRequiredInputs(config);
             requiredInputs.forEach(inputName => {
                 const testInputEl = document.getElementById(`checker-test-${inputName.replace(/\s/g, '-').toLowerCase()}`);
-                if (testInputEl) {
-                    testInputValues[inputName] = testInputEl.value || '';
-                }
+                if (testInputEl) testInputValues[inputName] = testInputEl.value || '';
             });
-            
             const result = await GameIdChecker.check(config, testValue, testInputValues);
-            
             if (result && result.valid) {
                 let infoRows = '';
                 if (result.nickname) infoRows += `<div class="test-info-row"><span>Nickname:</span><strong>${result.nickname}</strong></div>`;
                 if (result.country) infoRows += `<div class="test-info-row"><span>Country:</span><strong>${CountryHelper.getDisplay(result.country)}</strong></div>`;
-                
-                resultDiv.innerHTML = `
-                    <div class="test-result-card valid">
-                        <div class="test-result-header valid">
-                            <i class="fas fa-check-circle"></i> Test Successful - Account Found!
-                        </div>
-                        <div class="test-result-body">
-                            ${infoRows}
-                            <details class="raw-response">
-                                <summary>Raw API Response</summary>
-                                <pre>${JSON.stringify(result.raw, null, 2)}</pre>
-                            </details>
-                        </div>
-                    </div>
-                `;
+                resultDiv.innerHTML = `<div class="test-result-card valid"><div class="test-result-header valid"><i class="fas fa-check-circle"></i> Test Successful - Account Found!</div><div class="test-result-body">${infoRows}<details class="raw-response"><summary>Raw API Response</summary><pre>${JSON.stringify(result.raw, null, 2)}</pre></details></div></div>`;
             } else {
-                resultDiv.innerHTML = `
-                    <div class="test-result-card invalid">
-                        <div class="test-result-header invalid">
-                            <i class="fas fa-times-circle"></i> Test Failed - Account Not Found
-                        </div>
-                        <div class="test-result-body">
-                            ${result?.error ? `<p class="error-msg">Error: ${result.error}</p>` : ''}
-                            <details class="raw-response">
-                                <summary>Raw API Response</summary>
-                                <pre>${JSON.stringify(result?.raw || {}, null, 2)}</pre>
-                            </details>
-                        </div>
-                    </div>
-                `;
+                resultDiv.innerHTML = `<div class="test-result-card invalid"><div class="test-result-header invalid"><i class="fas fa-times-circle"></i> Test Failed - Account Not Found</div><div class="test-result-body">${result?.error ? `<p class="error-msg">Error: ${result.error}</p>` : ''}<details class="raw-response"><summary>Raw API Response</summary><pre>${JSON.stringify(result?.raw || {}, null, 2)}</pre></details></div></div>`;
             }
         } catch (error) {
-            resultDiv.innerHTML = `
-                <div class="test-result-card error">
-                    <div class="test-result-header error">
-                        <i class="fas fa-exclamation-triangle"></i> Test Error
-                    </div>
-                    <p>${error.message}</p>
-                </div>
-            `;
+            resultDiv.innerHTML = `<div class="test-result-card error"><div class="test-result-header error"><i class="fas fa-exclamation-triangle"></i> Test Error</div><p>${error.message}</p></div>`;
         }
     },
     
-    // NEW: Update test inputs when config changes (for multi-input support)
     updateTestInputs() {
         const jsonStr = document.getElementById('checker-json-config').value.trim();
         const testInputsContainer = document.getElementById('checker-test-extra-inputs');
-        
         if (!jsonStr || !testInputsContainer) return;
-        
         try {
             const config = JSON.parse(jsonStr);
             const requiredInputs = GameIdChecker.getRequiredInputs(config);
-            
             if (requiredInputs.length > 0) {
-                testInputsContainer.innerHTML = requiredInputs.map(name => `
-                    <div class="test-extra-input">
-                        <label>${name}</label>
-                        <input type="text" id="checker-test-${name.replace(/\s/g, '-').toLowerCase()}" placeholder="Enter test ${name}">
-                    </div>
-                `).join('');
+                testInputsContainer.innerHTML = requiredInputs.map(name => `<div class="test-extra-input"><label>${name}</label><input type="text" id="checker-test-${name.replace(/\s/g, '-').toLowerCase()}" placeholder="Enter test ${name}"></div>`).join('');
                 testInputsContainer.classList.remove('hidden');
-            } else {
-                testInputsContainer.innerHTML = '';
-                testInputsContainer.classList.add('hidden');
-            }
-        } catch(e) {
-            testInputsContainer.innerHTML = '';
-            testInputsContainer.classList.add('hidden');
-        }
+            } else { testInputsContainer.innerHTML = ''; testInputsContainer.classList.add('hidden'); }
+        } catch(e) { testInputsContainer.innerHTML = ''; testInputsContainer.classList.add('hidden'); }
     },
-    
+
     // ===== PAYMENTS =====
     renderPayments() {
         const container = document.getElementById('admin-payments-list');
@@ -1519,7 +1270,7 @@ const AdminApp = {
         catch (error) { Utils.showToast('Failed', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     // ===== ANNOUNCEMENTS =====
     renderAnnouncements() {
         const textArea = document.getElementById('announcement-text');
@@ -1541,7 +1292,7 @@ const AdminApp = {
         } catch (error) { Utils.showToast('Failed', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     // ===== BROADCAST =====
     async sendBroadcast() {
         const message = document.getElementById('broadcast-message').value.trim();
@@ -1559,13 +1310,13 @@ const AdminApp = {
         } catch (error) { Utils.showToast('Failed', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     // ===== BANNED USERS =====
     renderBannedUsers() {
         const container = document.getElementById('admin-banned-list');
         if (!container) return;
         if (this.state.bannedUsers.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fas fa-ban"></i><p>No banned users</p></div>'; return; }
-        container.innerHTML = this.state.bannedUsers.map(user => `<div class="banned-card"><div class="banned-icon"><i class="fas fa-user-slash"></i></div><div class="banned-info"><h4>${user.firstName || 'User'}</h4><p>@${user.username || 'N/A'} â€¢ ${user.telegramId}</p><p class="reason"><strong>Reason:</strong> ${user.reason}</p><p class="date">Banned: ${Utils.formatDate(user.bannedAt, 'long')}</p></div><button class="btn btn-success btn-sm" onclick="AdminApp.unbanUser('${user.telegramId}')"><i class="fas fa-check"></i> Unban</button></div>`).join('');
+        container.innerHTML = this.state.bannedUsers.map(user => `<div class="banned-card"><div class="banned-icon"><i class="fas fa-user-slash"></i></div><div class="banned-info"><h4>${user.firstName || 'User'}</h4><p>@${user.username || 'N/A'} • ${user.telegramId}</p><p class="reason"><strong>Reason:</strong> ${user.reason}</p><p class="date">Banned: ${Utils.formatDate(user.bannedAt, 'long')}</p></div><button class="btn btn-success btn-sm" onclick="AdminApp.unbanUser('${user.telegramId}')"><i class="fas fa-check"></i> Unban</button></div>`).join('');
     },
     
     async unbanUser(telegramId) {
@@ -1575,7 +1326,7 @@ const AdminApp = {
         catch (error) { Utils.showToast('Failed', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     // ===== CUSTOM EMOJIS =====
     renderCustomEmojis() {
         const container = document.getElementById('admin-emojis-list');
@@ -1598,7 +1349,7 @@ const AdminApp = {
     closeAddEmoji() { document.getElementById('add-emoji-modal').classList.add('hidden'); },
     
     loadEmojiPicker() {
-        const emojis = ['ðŸ˜€','ðŸ˜ƒ','ðŸ˜„','ðŸ˜','ðŸ˜†','ðŸ˜…','ðŸ¤£','ðŸ˜‚','ðŸ™‚','ðŸ™ƒ','ðŸ˜‰','ðŸ˜Š','ðŸ˜‡','ðŸ¥°','ðŸ˜','ðŸ¤©','ðŸ˜˜','ðŸ˜—','ðŸ˜š','ðŸ˜™','ðŸ˜‹','ðŸ˜›','ðŸ˜œ','ðŸ¤ª','ðŸ˜','ðŸ¤‘','ðŸ¤—','ðŸ¤­','ðŸ¤«','ðŸ¤”','ðŸ˜','ðŸ˜‘','ðŸ˜¶','ðŸ˜','ðŸ˜’','ðŸ™„','ðŸ˜¬','ðŸ˜®','ðŸ¤¯','ðŸ˜³','ðŸ¥µ','ðŸ¥¶','ðŸ˜±','ðŸ˜¨','ðŸ˜°','ðŸ˜¥','ðŸ˜¢','ðŸ˜­','ðŸ˜¤','ðŸ˜ ','ðŸ˜¡','ðŸ¤¬','ðŸ˜ˆ','ðŸ‘¿','ðŸ’€','â˜ ï¸','ðŸ’©','ðŸ¤¡','ðŸ‘»','ðŸ‘½','ðŸ‘¾','ðŸ¤–','â¤ï¸','ðŸ§¡','ðŸ’›','ðŸ’š','ðŸ’™','ðŸ’œ','ðŸ–¤','ðŸ¤','ðŸ¤Ž','ðŸ’”','ðŸ’•','ðŸ’ž','ðŸ’“','ðŸ’—','ðŸ’–','ðŸ’˜','â­','ðŸŒŸ','âœ¨','ðŸ’«','ðŸ”¥','ðŸ’¥','ðŸ’¢','ðŸ’¦','ðŸ’¨','ðŸ’£','ðŸ‘‹','ðŸ¤š','ðŸ–ï¸','âœ‹','ðŸ––','ðŸ‘Œ','ðŸ¤Œ','ðŸ¤','âœŒï¸','ðŸ¤ž','ðŸ¤Ÿ','ðŸ¤˜','ðŸ¤™','ðŸ‘ˆ','ðŸ‘‰','ðŸ‘†','ðŸ‘‡','â˜ï¸','ðŸ‘','ðŸ‘Ž','âœŠ','ðŸ‘Š','ðŸ¤›','ðŸ¤œ','ðŸ‘','ðŸ™Œ','ðŸ‘','ðŸ¤²','ðŸ¤','ðŸ™','ðŸŽ®','ðŸ•¹ï¸','ðŸŽ°','ðŸŽ²','ðŸ§©','ðŸŽ¯','ðŸŽ±','ðŸ”®','ðŸ§¿','ðŸŽª','ðŸ’Ž','ðŸ’°','ðŸ’µ','ðŸ’´','ðŸ’¶','ðŸ’·','ðŸ’¸','ðŸ’³','ðŸ†','ðŸ¥‡','ðŸŽ','ðŸŽ€','ðŸŽˆ','ðŸŽ‰','ðŸŽŠ','ðŸŽ„','ðŸŽƒ','âš¡','â˜€ï¸','ðŸŒ™'];
+        const emojis = ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','😐','😑','😶','😏','😒','🙄','😬','😮','🤯','😳','🥵','🥶','😱','😨','😰','😥','😢','😭','😤','😠','😡','🤬','😈','👿','💀','☠️','💩','🤡','👻','👽','👾','🤖','❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','💕','💞','💓','💗','💖','💘','⭐','🌟','✨','💫','🔥','💥','💢','💦','💨','💣','👋','🤚','🖐️','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏','🙌','👐','🤲','🤝','🙏','🎮','🕹️','🎰','🎲','🧩','🎯','🎱','🔮','🧿','🎪','💎','💰','💵','💴','💶','💷','💸','💳','🏆','🥇','🎁','🎀','🎈','🎉','🎊','🎄','🎃','⚡','☀️','🌙'];
         document.getElementById('emoji-picker-grid').innerHTML = emojis.map(e => `<div class="emoji-item" onclick="AdminApp.selectTriggerEmoji('${e}')">${e}</div>`).join('');
     },
     selectTriggerEmoji(emoji) { document.getElementById('emoji-trigger').value = emoji; this.closeEmojiPicker(); },
@@ -1644,7 +1395,7 @@ const AdminApp = {
         } catch (error) { Utils.showToast('Failed', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     // ===== SETTINGS =====
     renderSettings() {
         const nameInput = document.getElementById('website-name');
@@ -1674,7 +1425,7 @@ const AdminApp = {
         } catch (error) { Utils.showToast('Failed: ' + error.message, 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     // ===== DATABASE IDS =====
     renderDatabaseIds() {
         document.getElementById('main-bin-id').textContent = CONFIG.BINS.MAIN || 'Not set';
@@ -1687,8 +1438,277 @@ const AdminApp = {
     }
 };
 
-// ===== GLOBAL FUNCTIONS =====
+// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
+// ★★★ NEW: G2BULK GAME FIELDS AUTO-DETECTION SYSTEM ★★★
+// ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 
+const G2BULK_GAME_FIELDS = {
+    detect(serviceName, serviceCategory) {
+        const name = (serviceName || '').toLowerCase();
+        const cat = (serviceCategory || '').toLowerCase();
+        const combined = name + ' ' + cat;
+
+        for (const game of this.games) {
+            for (const keyword of game.keywords) {
+                if (combined.includes(keyword)) {
+                    return {
+                        gameName: game.gameName,
+                        fields: JSON.parse(JSON.stringify(game.fields)),
+                        linkFormat: game.linkFormat
+                    };
+                }
+            }
+        }
+
+        // Default fallback
+        return {
+            gameName: serviceCategory || 'Unknown Game',
+            fields: [
+                { name: 'Game ID', placeholder: 'Enter your Game ID / Player ID', required: true }
+            ],
+            linkFormat: '{{Game ID}}'
+        };
+    },
+
+    games: [
+        {
+            gameName: 'Mobile Legends (MLBB)',
+            keywords: ['mobile legends', 'mlbb', 'mobile legend', 'ml diamond', 'ml starlight'],
+            fields: [
+                { name: 'User ID', placeholder: 'Enter your ML User ID', required: true },
+                { name: 'Zone ID', placeholder: 'Enter your Zone/Server ID', required: true }
+            ],
+            linkFormat: '{{User ID}}({{Zone ID}})'
+        },
+        {
+            gameName: 'PUBG Mobile',
+            keywords: ['pubg mobile', 'pubg uc', 'pubgm', 'pubg royale'],
+            fields: [
+                { name: 'Player ID', placeholder: 'Enter your PUBG Mobile Player ID', required: true }
+            ],
+            linkFormat: '{{Player ID}}'
+        },
+        {
+            gameName: 'PUBG (PC/Console)',
+            keywords: ['pubg pc', 'pubg console', 'pubg battlegrounds'],
+            fields: [
+                { name: 'Player ID', placeholder: 'Enter your PUBG Player ID', required: true }
+            ],
+            linkFormat: '{{Player ID}}'
+        },
+        {
+            gameName: 'Free Fire',
+            keywords: ['free fire', 'freefire', 'garena free fire', 'ff diamond', 'free fire max'],
+            fields: [
+                { name: 'Player ID', placeholder: 'Enter your Free Fire Player ID', required: true }
+            ],
+            linkFormat: '{{Player ID}}'
+        },
+        {
+            gameName: 'Genshin Impact',
+            keywords: ['genshin impact', 'genshin', 'genesis crystal'],
+            fields: [
+                { name: 'UID', placeholder: 'Enter your Genshin Impact UID', required: true },
+                { name: 'Server', placeholder: 'Select Server (e.g., Asia, America, Europe)', required: true }
+            ],
+            linkFormat: '{{UID}}|{{Server}}'
+        },
+        {
+            gameName: 'Honkai Star Rail',
+            keywords: ['honkai star rail', 'honkai', 'star rail', 'hsr', 'oneiric shard'],
+            fields: [
+                { name: 'UID', placeholder: 'Enter your Honkai Star Rail UID', required: true },
+                { name: 'Server', placeholder: 'Select Server', required: true }
+            ],
+            linkFormat: '{{UID}}|{{Server}}'
+        },
+        {
+            gameName: 'Call of Duty Mobile',
+            keywords: ['call of duty mobile', 'cod mobile', 'codm', 'cod points'],
+            fields: [
+                { name: 'Player ID', placeholder: 'Enter your CODM Player ID (Open ID)', required: true }
+            ],
+            linkFormat: '{{Player ID}}'
+        },
+        {
+            gameName: 'Clash of Clans',
+            keywords: ['clash of clans', 'coc gems', 'clash of clan'],
+            fields: [
+                { name: 'Player Tag', placeholder: 'Enter Player Tag (e.g., #ABC123)', required: true }
+            ],
+            linkFormat: '{{Player Tag}}'
+        },
+        {
+            gameName: 'Clash Royale',
+            keywords: ['clash royale'],
+            fields: [
+                { name: 'Player Tag', placeholder: 'Enter Player Tag', required: true }
+            ],
+            linkFormat: '{{Player Tag}}'
+        },
+        {
+            gameName: 'Brawl Stars',
+            keywords: ['brawl stars'],
+            fields: [
+                { name: 'Player Tag', placeholder: 'Enter Player Tag', required: true }
+            ],
+            linkFormat: '{{Player Tag}}'
+        },
+        {
+            gameName: 'Valorant',
+            keywords: ['valorant', 'valorant points', 'vp valorant'],
+            fields: [
+                { name: 'Riot ID', placeholder: 'Enter Riot ID (e.g., Name#TAG)', required: true }
+            ],
+            linkFormat: '{{Riot ID}}'
+        },
+        {
+            gameName: 'League of Legends: Wild Rift',
+            keywords: ['wild rift', 'lol wild rift', 'league of legends wild'],
+            fields: [
+                { name: 'Riot ID', placeholder: 'Enter Riot ID', required: true }
+            ],
+            linkFormat: '{{Riot ID}}'
+        },
+        {
+            gameName: 'League of Legends',
+            keywords: ['league of legends', 'lol rp', 'riot points'],
+            fields: [
+                { name: 'Summoner Name', placeholder: 'Enter Summoner Name', required: true },
+                { name: 'Server', placeholder: 'Select Server (NA, EUW, etc.)', required: true }
+            ],
+            linkFormat: '{{Summoner Name}}|{{Server}}'
+        },
+        {
+            gameName: 'Roblox',
+            keywords: ['roblox', 'robux'],
+            fields: [
+                { name: 'Username', placeholder: 'Enter Roblox Username', required: true }
+            ],
+            linkFormat: '{{Username}}'
+        },
+        {
+            gameName: 'Fortnite',
+            keywords: ['fortnite', 'v-bucks', 'vbucks'],
+            fields: [
+                { name: 'Epic Username', placeholder: 'Enter Epic Games Username', required: true }
+            ],
+            linkFormat: '{{Epic Username}}'
+        },
+        {
+            gameName: 'Arena of Valor (AoV)',
+            keywords: ['arena of valor', 'aov', 'liên quân', 'rov'],
+            fields: [
+                { name: 'Player ID', placeholder: 'Enter AoV Player ID', required: true }
+            ],
+            linkFormat: '{{Player ID}}'
+        },
+        {
+            gameName: 'Stumble Guys',
+            keywords: ['stumble guys', 'stumble guy'],
+            fields: [
+                { name: 'Username', placeholder: 'Enter Stumble Guys Username', required: true }
+            ],
+            linkFormat: '{{Username}}'
+        },
+        {
+            gameName: 'Identity V',
+            keywords: ['identity v'],
+            fields: [
+                { name: 'Player ID', placeholder: 'Enter Identity V Player ID', required: true }
+            ],
+            linkFormat: '{{Player ID}}'
+        },
+        {
+            gameName: 'Tower of Fantasy',
+            keywords: ['tower of fantasy', 'tof'],
+            fields: [
+                { name: 'UID', placeholder: 'Enter ToF UID', required: true },
+                { name: 'Server', placeholder: 'Enter Server name', required: true }
+            ],
+            linkFormat: '{{UID}}|{{Server}}'
+        },
+        {
+            gameName: 'Apex Legends Mobile',
+            keywords: ['apex legends', 'apex mobile'],
+            fields: [
+                { name: 'Player ID', placeholder: 'Enter Apex Player ID', required: true }
+            ],
+            linkFormat: '{{Player ID}}'
+        },
+        {
+            gameName: 'Steam',
+            keywords: ['steam wallet', 'steam gift', 'steam code'],
+            fields: [
+                { name: 'Steam ID', placeholder: 'Enter Steam ID or Profile URL', required: true }
+            ],
+            linkFormat: '{{Steam ID}}'
+        },
+        {
+            gameName: 'Minecraft',
+            keywords: ['minecraft', 'minecoins'],
+            fields: [
+                { name: 'Gamertag', placeholder: 'Enter Minecraft Gamertag', required: true }
+            ],
+            linkFormat: '{{Gamertag}}'
+        },
+        {
+            gameName: 'Zenless Zone Zero',
+            keywords: ['zenless zone zero', 'zzz', 'polychrome'],
+            fields: [
+                { name: 'UID', placeholder: 'Enter ZZZ UID', required: true },
+                { name: 'Server', placeholder: 'Select Server', required: true }
+            ],
+            linkFormat: '{{UID}}|{{Server}}'
+        },
+        {
+            gameName: 'Wuthering Waves',
+            keywords: ['wuthering waves', 'lunite'],
+            fields: [
+                { name: 'UID', placeholder: 'Enter Wuthering Waves UID', required: true },
+                { name: 'Server', placeholder: 'Select Server', required: true }
+            ],
+            linkFormat: '{{UID}}|{{Server}}'
+        },
+        {
+            gameName: 'Hay Day',
+            keywords: ['hay day'],
+            fields: [
+                { name: 'Player Tag', placeholder: 'Enter Player Tag', required: true }
+            ],
+            linkFormat: '{{Player Tag}}'
+        },
+        {
+            gameName: 'Among Us',
+            keywords: ['among us'],
+            fields: [
+                { name: 'Username', placeholder: 'Enter Among Us Username', required: true }
+            ],
+            linkFormat: '{{Username}}'
+        },
+        {
+            gameName: 'Netflix / Streaming',
+            keywords: ['netflix', 'spotify', 'youtube premium', 'disney'],
+            fields: [
+                { name: 'Email', placeholder: 'Enter account email', required: true }
+            ],
+            linkFormat: '{{Email}}'
+        },
+        {
+            gameName: 'Social Media',
+            keywords: ['instagram', 'tiktok', 'facebook', 'twitter', 'youtube', 'telegram', 'snapchat'],
+            fields: [
+                { name: 'Profile URL', placeholder: 'Enter your profile/post URL', required: true }
+            ],
+            linkFormat: '{{Profile URL}}'
+        }
+    ]
+};
+
+window.G2BULK_GAME_FIELDS = G2BULK_GAME_FIELDS;
+
+
+// ===== GLOBAL FUNCTIONS =====
 function showAdminPage(page) { AdminApp.showAdminPage(page); }
 function filterOrders(filter) { AdminApp.filterOrders(filter); }
 function filterTopups(filter) { AdminApp.filterTopups(filter); }
@@ -1733,31 +1753,15 @@ function previewEmojiFile(event) {
 function removeEmojiFile() { document.getElementById('emoji-file').value = ''; document.getElementById('emoji-file-preview').innerHTML = ''; document.getElementById('emoji-file-preview').classList.add('hidden'); }
 function closeUserDetails() { AdminApp.closeUserDetails(); }
 function copyId(elementId) { Utils.copyToClipboard(document.getElementById(elementId).textContent); }
-
-// Toggle checker config visibility
 function toggleCheckerConfig() {
     const enabled = document.getElementById('checker-enabled').checked;
     document.getElementById('checker-json-section').classList.toggle('hidden', !enabled);
     document.getElementById('checker-test-section').classList.toggle('hidden', !enabled);
-    if (!enabled) {
-        document.getElementById('checker-json-preview').classList.add('hidden');
-        document.getElementById('checker-test-result').classList.add('hidden');
-    }
+    if (!enabled) { document.getElementById('checker-json-preview').classList.add('hidden'); document.getElementById('checker-test-result').classList.add('hidden'); }
 }
-
-// NEW: Preview JSON config on input
-function onCheckerJsonInput() {
-    AdminApp.previewCheckerConfig();
-    AdminApp.updateTestInputs();
-}
-
-// NEW: Load sample config
+function onCheckerJsonInput() { AdminApp.previewCheckerConfig(); AdminApp.updateTestInputs(); }
 function loadSampleConfig(type) { AdminApp.loadSampleConfig(type); }
-
-// NEW: Test checker
 function testChecker() { AdminApp.testChecker(); }
-
-// Upload triggers
 function triggerCategoryIconUpload() { document.getElementById('category-icon').click(); }
 function triggerProductIconUpload() { document.getElementById('product-icon').click(); }
 function triggerBannerUpload() { document.getElementById('banner-image').click(); }
@@ -1765,18 +1769,27 @@ function triggerPaymentIconUpload() { document.getElementById('payment-icon').cl
 function triggerLogoUpload() { document.getElementById('website-logo').click(); }
 function triggerBroadcastImageUpload() { document.getElementById('broadcast-image').click(); }
 
-// G2Bulk API reference
+
+// ===== G2Bulk API (MODIFIED - Added addFunds) =====
 const G2BulkAPI = window.G2BulkAPI || {
     get URL() { return CONFIG.G2BULK.API_URL; },
     get KEY() { return CONFIG.G2BULK.API_KEY; },
     async request(action, params = {}) {
-        const response = await fetch(this.URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: this.KEY, action, ...params }) });
+        const response = await fetch(this.URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: this.KEY, action, ...params })
+        });
         return await response.json();
     },
     async getServices() { return await this.request('services'); },
     async getBalance() { return await this.request('balance'); },
     async placeOrder(serviceId, link, quantity = 1) { return await this.request('add', { service: serviceId, link, quantity }); },
     async checkStatus(orderId) { return await this.request('status', { order: orderId }); },
+    // ★★★ NEW: Add funds to G2Bulk balance ★★★
+    async addFunds(amount, paymentMethod) {
+        return await this.request('addfunds', { amount: parseFloat(amount), payment: paymentMethod });
+    },
     isBalanceError(error) {
         if (!error) return false;
         const s = String(error).toLowerCase();
@@ -1785,23 +1798,20 @@ const G2BulkAPI = window.G2BulkAPI || {
 };
 window.G2BulkAPI = G2BulkAPI;
 
-// GameIdChecker for admin panel
+
+// ===== GameIdChecker =====
 const GameIdChecker = window.GameIdChecker || {
     async check(config, value, allInputValues = {}) {
         if (!config) return null;
-        if (typeof config === 'string') {
-            try { config = JSON.parse(config); } catch(e) { return null; }
-        }
+        if (typeof config === 'string') { try { config = JSON.parse(config); } catch(e) { return null; } }
         const url = config.url || config.apiUrl;
         if (!url) return null;
         const method = (config.method || 'POST').toUpperCase();
         const headers = config.headers || { 'Content-Type': 'application/json' };
-        
         try {
             let fetchUrl = url;
             let options = { method, headers: { ...headers } };
             const safeEscape = (val) => String(val || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
-            
             if (method === 'POST') {
                 if (config.body) {
                     let bodyStr = JSON.stringify(config.body);
@@ -1821,12 +1831,9 @@ const GameIdChecker = window.GameIdChecker || {
                     fetchUrl = fetchUrl.replace(new RegExp(`\\{\\{${escaped}\\}\\}`, 'g'), encodeURIComponent(val || ''));
                 });
             }
-            
             const response = await fetch(fetchUrl, options);
             const data = await response.json();
-            
             let isValid = false, nickname = null, country = null;
-            
             if (config.responsePath || config.response) {
                 const rp = config.responsePath || config.response;
                 const validValue = rp.valid ? this.getNestedValue(data, rp.valid) : null;
@@ -1838,7 +1845,6 @@ const GameIdChecker = window.GameIdChecker || {
                 const validValue = config.responseValidPath ? this.getNestedValue(data, config.responseValidPath) : null;
                 isValid = validValue !== null && validValue !== undefined ? !!validValue : !!nickname;
             }
-            
             return { valid: isValid, nickname, playerName: nickname, country, raw: data };
         } catch (error) { return { valid: false, nickname: null, playerName: null, country: null, error: error.message }; }
     },
@@ -1854,45 +1860,38 @@ const GameIdChecker = window.GameIdChecker || {
 };
 window.GameIdChecker = GameIdChecker;
 
-// CountryHelper for admin
+
+// ===== CountryHelper =====
 const CountryHelper = window.CountryHelper || {
     countries: {
-        'AF':'ðŸ‡¦ðŸ‡« Afghanistan','AL':'ðŸ‡¦ðŸ‡± Albania','DZ':'ðŸ‡©ðŸ‡¿ Algeria','AD':'ðŸ‡¦ðŸ‡© Andorra','AO':'ðŸ‡¦ðŸ‡´ Angola',
-        'AR':'ðŸ‡¦ðŸ‡· Argentina','AM':'ðŸ‡¦ðŸ‡² Armenia','AU':'ðŸ‡¦ðŸ‡º Australia','AT':'ðŸ‡¦ðŸ‡¹ Austria','AZ':'ðŸ‡¦ðŸ‡¿ Azerbaijan',
-        'BH':'ðŸ‡§ðŸ‡­ Bahrain','BD':'ðŸ‡§ðŸ‡© Bangladesh','BY':'ðŸ‡§ðŸ‡¾ Belarus','BE':'ðŸ‡§ðŸ‡ª Belgium','BZ':'ðŸ‡§ðŸ‡¿ Belize',
-        'BJ':'ðŸ‡§ðŸ‡¯ Benin','BT':'ðŸ‡§ðŸ‡¹ Bhutan','BO':'ðŸ‡§ðŸ‡´ Bolivia','BA':'ðŸ‡§ðŸ‡¦ Bosnia','BW':'ðŸ‡§ðŸ‡¼ Botswana',
-        'BR':'ðŸ‡§ðŸ‡· Brazil','BN':'ðŸ‡§ðŸ‡³ Brunei','BG':'ðŸ‡§ðŸ‡¬ Bulgaria','KH':'ðŸ‡°ðŸ‡­ Cambodia','CM':'ðŸ‡¨ðŸ‡² Cameroon',
-        'CA':'ðŸ‡¨ðŸ‡¦ Canada','CL':'ðŸ‡¨ðŸ‡± Chile','CN':'ðŸ‡¨ðŸ‡³ China','CO':'ðŸ‡¨ðŸ‡´ Colombia','CR':'ðŸ‡¨ðŸ‡· Costa Rica',
-        'HR':'ðŸ‡­ðŸ‡· Croatia','CU':'ðŸ‡¨ðŸ‡º Cuba','CY':'ðŸ‡¨ðŸ‡¾ Cyprus','CZ':'ðŸ‡¨ðŸ‡¿ Czech Republic','DK':'ðŸ‡©ðŸ‡° Denmark',
-        'DO':'ðŸ‡©ðŸ‡´ Dominican Republic','EC':'ðŸ‡ªðŸ‡¨ Ecuador','EG':'ðŸ‡ªðŸ‡¬ Egypt','SV':'ðŸ‡¸ðŸ‡» El Salvador',
-        'EE':'ðŸ‡ªðŸ‡ª Estonia','ET':'ðŸ‡ªðŸ‡¹ Ethiopia','FI':'ðŸ‡«ðŸ‡® Finland','FR':'ðŸ‡«ðŸ‡· France','GE':'ðŸ‡¬ðŸ‡ª Georgia',
-        'DE':'ðŸ‡©ðŸ‡ª Germany','GH':'ðŸ‡¬ðŸ‡­ Ghana','GR':'ðŸ‡¬ðŸ‡· Greece','GT':'ðŸ‡¬ðŸ‡¹ Guatemala','HN':'ðŸ‡­ðŸ‡³ Honduras',
-        'HK':'ðŸ‡­ðŸ‡° Hong Kong','HU':'ðŸ‡­ðŸ‡º Hungary','IS':'ðŸ‡®ðŸ‡¸ Iceland','IN':'ðŸ‡®ðŸ‡³ India','ID':'ðŸ‡®ðŸ‡© Indonesia',
-        'IR':'ðŸ‡®ðŸ‡· Iran','IQ':'ðŸ‡®ðŸ‡¶ Iraq','IE':'ðŸ‡®ðŸ‡ª Ireland','IL':'ðŸ‡®ðŸ‡± Israel','IT':'ðŸ‡®ðŸ‡¹ Italy',
-        'JM':'ðŸ‡¯ðŸ‡² Jamaica','JP':'ðŸ‡¯ðŸ‡µ Japan','JO':'ðŸ‡¯ðŸ‡´ Jordan','KZ':'ðŸ‡°ðŸ‡¿ Kazakhstan','KE':'ðŸ‡°ðŸ‡ª Kenya',
-        'KR':'ðŸ‡°ðŸ‡· South Korea','KW':'ðŸ‡°ðŸ‡¼ Kuwait','KG':'ðŸ‡°ðŸ‡¬ Kyrgyzstan','LA':'ðŸ‡±ðŸ‡¦ Laos','LV':'ðŸ‡±ðŸ‡» Latvia',
-        'LB':'ðŸ‡±ðŸ‡§ Lebanon','LY':'ðŸ‡±ðŸ‡¾ Libya','LT':'ðŸ‡±ðŸ‡¹ Lithuania','LU':'ðŸ‡±ðŸ‡º Luxembourg','MO':'ðŸ‡²ðŸ‡´ Macau',
-        'MY':'ðŸ‡²ðŸ‡¾ Malaysia','MV':'ðŸ‡²ðŸ‡» Maldives','ML':'ðŸ‡²ðŸ‡± Mali','MT':'ðŸ‡²ðŸ‡¹ Malta','MX':'ðŸ‡²ðŸ‡½ Mexico',
-        'MD':'ðŸ‡²ðŸ‡© Moldova','MN':'ðŸ‡²ðŸ‡³ Mongolia','ME':'ðŸ‡²ðŸ‡ª Montenegro','MA':'ðŸ‡²ðŸ‡¦ Morocco','MZ':'ðŸ‡²ðŸ‡¿ Mozambique',
-        'MM':'ðŸ‡²ðŸ‡² Myanmar','NA':'ðŸ‡³ðŸ‡¦ Namibia','NP':'ðŸ‡³ðŸ‡µ Nepal','NL':'ðŸ‡³ðŸ‡± Netherlands','NZ':'ðŸ‡³ðŸ‡¿ New Zealand',
-        'NI':'ðŸ‡³ðŸ‡® Nicaragua','NG':'ðŸ‡³ðŸ‡¬ Nigeria','NO':'ðŸ‡³ðŸ‡´ Norway','OM':'ðŸ‡´ðŸ‡² Oman','PK':'ðŸ‡µðŸ‡° Pakistan',
-        'PS':'ðŸ‡µðŸ‡¸ Palestine','PA':'ðŸ‡µðŸ‡¦ Panama','PY':'ðŸ‡µðŸ‡¾ Paraguay','PE':'ðŸ‡µðŸ‡ª Peru','PH':'ðŸ‡µðŸ‡­ Philippines',
-        'PL':'ðŸ‡µðŸ‡± Poland','PT':'ðŸ‡µðŸ‡¹ Portugal','QA':'ðŸ‡¶ðŸ‡¦ Qatar','RO':'ðŸ‡·ðŸ‡´ Romania','RU':'ðŸ‡·ðŸ‡º Russia',
-        'RW':'ðŸ‡·ðŸ‡¼ Rwanda','SA':'ðŸ‡¸ðŸ‡¦ Saudi Arabia','SN':'ðŸ‡¸ðŸ‡³ Senegal','RS':'ðŸ‡·ðŸ‡¸ Serbia','SG':'ðŸ‡¸ðŸ‡¬ Singapore',
-        'SK':'ðŸ‡¸ðŸ‡° Slovakia','SI':'ðŸ‡¸ðŸ‡® Slovenia','SO':'ðŸ‡¸ðŸ‡´ Somalia','ZA':'ðŸ‡¿ðŸ‡¦ South Africa','ES':'ðŸ‡ªðŸ‡¸ Spain',
-        'LK':'ðŸ‡±ðŸ‡° Sri Lanka','SD':'ðŸ‡¸ðŸ‡© Sudan','SE':'ðŸ‡¸ðŸ‡ª Sweden','CH':'ðŸ‡¨ðŸ‡­ Switzerland','SY':'ðŸ‡¸ðŸ‡¾ Syria',
-        'TW':'ðŸ‡¹ðŸ‡¼ Taiwan','TJ':'ðŸ‡¹ðŸ‡¯ Tajikistan','TZ':'ðŸ‡¹ðŸ‡¿ Tanzania','TH':'ðŸ‡¹ðŸ‡­ Thailand','TN':'ðŸ‡¹ðŸ‡³ Tunisia',
-        'TR':'ðŸ‡¹ðŸ‡· Turkey','TM':'ðŸ‡¹ðŸ‡² Turkmenistan','UG':'ðŸ‡ºðŸ‡¬ Uganda','UA':'ðŸ‡ºðŸ‡¦ Ukraine','AE':'ðŸ‡¦ðŸ‡ª UAE',
-        'GB':'ðŸ‡¬ðŸ‡§ United Kingdom','US':'ðŸ‡ºðŸ‡¸ United States','UY':'ðŸ‡ºðŸ‡¾ Uruguay','UZ':'ðŸ‡ºðŸ‡¿ Uzbekistan',
-        'VE':'ðŸ‡»ðŸ‡ª Venezuela','VN':'ðŸ‡»ðŸ‡³ Vietnam','YE':'ðŸ‡¾ðŸ‡ª Yemen','ZM':'ðŸ‡¿ðŸ‡² Zambia','ZW':'ðŸ‡¿ðŸ‡¼ Zimbabwe'
+        'AF':'🇦🇫 Afghanistan','AL':'🇦🇱 Albania','DZ':'🇩🇿 Algeria','AD':'🇦🇩 Andorra','AO':'🇦🇴 Angola',
+        'AR':'🇦🇷 Argentina','AM':'🇦🇲 Armenia','AU':'🇦🇺 Australia','AT':'🇦🇹 Austria','AZ':'🇦🇿 Azerbaijan',
+        'BH':'🇧🇭 Bahrain','BD':'🇧🇩 Bangladesh','BY':'🇧🇾 Belarus','BE':'🇧🇪 Belgium','BZ':'🇧🇿 Belize',
+        'BR':'🇧🇷 Brazil','BN':'🇧🇳 Brunei','BG':'🇧🇬 Bulgaria','KH':'🇰🇭 Cambodia','CM':'🇨🇲 Cameroon',
+        'CA':'🇨🇦 Canada','CL':'🇨🇱 Chile','CN':'🇨🇳 China','CO':'🇨🇴 Colombia','CR':'🇨🇷 Costa Rica',
+        'HR':'🇭🇷 Croatia','CU':'🇨🇺 Cuba','CY':'🇨🇾 Cyprus','CZ':'🇨🇿 Czech Republic','DK':'🇩🇰 Denmark',
+        'EG':'🇪🇬 Egypt','EE':'🇪🇪 Estonia','ET':'🇪🇹 Ethiopia','FI':'🇫🇮 Finland','FR':'🇫🇷 France',
+        'GE':'🇬🇪 Georgia','DE':'🇩🇪 Germany','GH':'🇬🇭 Ghana','GR':'🇬🇷 Greece','HK':'🇭🇰 Hong Kong',
+        'HU':'🇭🇺 Hungary','IN':'🇮🇳 India','ID':'🇮🇩 Indonesia','IR':'🇮🇷 Iran','IQ':'🇮🇶 Iraq',
+        'IE':'🇮🇪 Ireland','IL':'🇮🇱 Israel','IT':'🇮🇹 Italy','JP':'🇯🇵 Japan','JO':'🇯🇴 Jordan',
+        'KZ':'🇰🇿 Kazakhstan','KE':'🇰🇪 Kenya','KR':'🇰🇷 South Korea','KW':'🇰🇼 Kuwait','LA':'🇱🇦 Laos',
+        'LB':'🇱🇧 Lebanon','LY':'🇱🇾 Libya','LT':'🇱🇹 Lithuania','MY':'🇲🇾 Malaysia','MX':'🇲🇽 Mexico',
+        'MN':'🇲🇳 Mongolia','MA':'🇲🇦 Morocco','MM':'🇲🇲 Myanmar','NP':'🇳🇵 Nepal','NL':'🇳🇱 Netherlands',
+        'NZ':'🇳🇿 New Zealand','NG':'🇳🇬 Nigeria','NO':'🇳🇴 Norway','PK':'🇵🇰 Pakistan','PA':'🇵🇦 Panama',
+        'PE':'🇵🇪 Peru','PH':'🇵🇭 Philippines','PL':'🇵🇱 Poland','PT':'🇵🇹 Portugal','QA':'🇶🇦 Qatar',
+        'RO':'🇷🇴 Romania','RU':'🇷🇺 Russia','SA':'🇸🇦 Saudi Arabia','SG':'🇸🇬 Singapore','ZA':'🇿🇦 South Africa',
+        'ES':'🇪🇸 Spain','LK':'🇱🇰 Sri Lanka','SE':'🇸🇪 Sweden','CH':'🇨🇭 Switzerland','TW':'🇹🇼 Taiwan',
+        'TH':'🇹🇭 Thailand','TR':'🇹🇷 Turkey','UA':'🇺🇦 Ukraine','AE':'🇦🇪 UAE','GB':'🇬🇧 United Kingdom',
+        'US':'🇺🇸 United States','UZ':'🇺🇿 Uzbekistan','VN':'🇻🇳 Vietnam','YE':'🇾🇪 Yemen'
     },
     getDisplay(code) {
         if (!code) return '';
         code = String(code).toUpperCase().trim();
-        return this.countries[code] || `ðŸŒ ${code}`;
+        return this.countries[code] || `🌐 ${code}`;
     }
 };
 window.CountryHelper = CountryHelper;
+
 
 // ===== EVENT LISTENERS =====
 document.addEventListener('DOMContentLoaded', () => {
