@@ -9,6 +9,201 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- ★★★ NEW: Styles for G2Bulk Game Fields + Add Funds ★★★ -->
+    <style>
+        /* ===== G2Bulk Game Fields Preview (Product Modal) ===== */
+        .g2bulk-game-fields-preview {
+            margin-top: 14px;
+        }
+        .game-fields-card {
+            background: rgba(124, 58, 237, 0.08);
+            border: 1px solid rgba(124, 58, 237, 0.25);
+            border-radius: 14px;
+            padding: 18px;
+            animation: fadeInUp 0.3s ease;
+        }
+        .game-fields-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+            color: #a78bfa;
+        }
+        .game-fields-header i {
+            font-size: 18px;
+        }
+        .game-fields-header h4 {
+            margin: 0;
+            font-size: 15px;
+            font-weight: 600;
+            color: #c4b5fd;
+        }
+        .game-fields-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .game-field-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 14px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+        }
+        .field-badge {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #7c3aed, #a78bfa);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+        .field-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .field-info strong {
+            display: block;
+            font-size: 14px;
+            color: #e2e8f0;
+            font-weight: 600;
+        }
+        .field-info small {
+            display: block;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.45);
+            margin-top: 2px;
+        }
+        .field-required {
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 6px;
+            font-weight: 600;
+            background: rgba(16, 185, 129, 0.15);
+            color: #10b981;
+            flex-shrink: 0;
+        }
+        .game-fields-link-format {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            background: rgba(59, 130, 246, 0.08);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+        .game-fields-link-format span {
+            color: #93c5fd;
+            font-size: 13px;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        .game-fields-link-format code {
+            color: #fbbf24;
+            font-size: 13px;
+            font-family: 'Courier New', monospace;
+            word-break: break-all;
+        }
+        .game-fields-note {
+            display: block;
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.4);
+            line-height: 1.5;
+        }
+        .game-fields-note i {
+            color: #60a5fa;
+        }
+
+        /* ===== Product Card Game Fields Info ===== */
+        .product-game-fields {
+            font-size: 12px !important;
+            color: #a78bfa !important;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 4px !important;
+        }
+        .product-game-fields i {
+            font-size: 12px;
+        }
+        .product-game-fields.warning {
+            color: #f59e0b !important;
+        }
+
+        /* ===== G2Bulk Service Card Game Tag ===== */
+        .service-game-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 11px;
+            color: #a78bfa;
+            background: rgba(124, 58, 237, 0.12);
+            border: 1px solid rgba(124, 58, 237, 0.2);
+            padding: 3px 8px;
+            border-radius: 6px;
+            margin: 6px 0;
+        }
+        .service-game-tag i {
+            font-size: 10px;
+        }
+
+        /* ===== G2Bulk Add Funds Section ===== */
+        .g2bulk-add-funds-section {
+            margin-top: 16px;
+        }
+        .add-funds-card {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(59, 130, 246, 0.08));
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            border-radius: 16px;
+            padding: 20px;
+            animation: fadeInUp 0.3s ease;
+        }
+        .add-funds-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 16px;
+            color: #10b981;
+        }
+        .add-funds-header i {
+            font-size: 20px;
+        }
+        .add-funds-header h4 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 600;
+            color: #34d399;
+        }
+        .add-funds-body .form-group {
+            margin-bottom: 12px;
+        }
+        .add-funds-body .form-group label {
+            display: block;
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.65);
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        .add-funds-result {
+            margin-top: 12px;
+        }
+
+        /* ===== Animations ===== */
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
 </head>
 <body>
     <!-- Access Denied Screen -->
@@ -278,6 +473,7 @@
                     </div>
                     <div class="balance-amount" id="g2bulk-balance-display">Loading...</div>
                 </div>
+                <!-- ★ Add Funds section is dynamically injected here by admin.js -->
                 <div class="g2bulk-search-bar">
                     <div class="search-input-group">
                         <i class="fas fa-search"></i>
@@ -319,7 +515,7 @@
                 </div>
             </div>
 
-            <!-- ★★★ Input Tables Page (NEW - was missing) ★★★ -->
+            <!-- Input Tables Page -->
             <div id="admin-page-input-tables" class="admin-page hidden">
                 <div class="page-header">
                     <h1><i class="fas fa-keyboard"></i> Input Tables</h1>
@@ -329,7 +525,7 @@
                 </div>
                 <div class="info-box">
                     <i class="fas fa-info-circle"></i>
-                    <p>Input tables define the fields users must fill in before purchasing (e.g., Player ID, Zone ID). Enable Game ID Checker to auto-verify player accounts.</p>
+                    <p>Input tables define the fields users must fill in before purchasing (e.g., Player ID, Zone ID). Enable Game ID Checker to auto-verify player accounts. <strong>Note:</strong> G2Bulk products auto-detect game fields — no need to create input tables for them.</p>
                 </div>
                 <div class="input-tables-list" id="admin-input-tables-list"></div>
             </div>
@@ -559,7 +755,7 @@
         </div>
     </div>
 
-    <!-- Add Product Modal -->
+    <!-- Add Product Modal (★ UPDATED - Game Fields Preview area) -->
     <div id="add-product-modal" class="modal hidden">
         <div class="modal-overlay" onclick="closeAddProduct()"></div>
         <div class="modal-content large">
@@ -614,9 +810,10 @@
                         <option value="24hours">24 Hours</option>
                     </select>
                 </div>
+
                 <div class="form-section-header">
                     <h4><i class="fas fa-cloud"></i> G2Bulk API Configuration</h4>
-                    <small>Link this product to a G2Bulk service for auto delivery</small>
+                    <small>Link this product to a G2Bulk service for auto delivery. Game ID fields will be auto-detected.</small>
                 </div>
                 <div class="form-group">
                     <label>G2Bulk Service ID</label>
@@ -631,6 +828,7 @@
                     </div>
                 </div>
                 <div id="service-lookup-result" class="service-lookup-result hidden"></div>
+                <!-- ★★★ Game Fields Preview is dynamically inserted here by admin.js ★★★ -->
                 <div class="form-group">
                     <label>G2Bulk Rate (USD)</label>
                     <input type="text" id="product-g2bulk-rate" placeholder="Auto-filled" readonly>
@@ -686,7 +884,7 @@
         </div>
     </div>
 
-    <!-- ★★★ Add Input Table Modal (COMPLETELY REDESIGNED - JSON Config System) ★★★ -->
+    <!-- Add Input Table Modal -->
     <div id="add-input-table-modal" class="modal hidden">
         <div class="modal-overlay" onclick="closeAddInputTable()"></div>
         <div class="modal-content large">
@@ -730,10 +928,8 @@
                     <small>Auto verify player ID with game server before purchase</small>
                 </div>
 
-                <!-- JSON Config Section (shown when checker enabled) -->
+                <!-- JSON Config Section -->
                 <div id="checker-json-section" class="checker-json-section hidden">
-
-                    <!-- Sample Config Buttons -->
                     <div class="form-group">
                         <label><i class="fas fa-gamepad"></i> Quick Templates</label>
                         <div class="sample-config-grid">
@@ -771,7 +967,6 @@
                         </small>
                     </div>
 
-                    <!-- JSON Config Textarea -->
                     <div class="form-group">
                         <label><i class="fas fa-code"></i> Checker JSON Config <span class="required">*</span></label>
                         <textarea id="checker-json-config" 
@@ -804,31 +999,26 @@
                         </div>
                     </div>
 
-                    <!-- Parsed Preview -->
                     <div id="checker-json-preview" class="checker-json-preview hidden"></div>
-
                 </div>
 
-                <!-- Test Section (shown when checker enabled) -->
+                <!-- Test Section -->
                 <div id="checker-test-section" class="checker-test-section hidden">
                     <div class="form-section-divider small">
                         <div class="divider-line"></div>
                         <span class="divider-text"><i class="fas fa-flask"></i> Test Checker</span>
                         <div class="divider-line"></div>
                     </div>
-
                     <div class="form-group">
                         <label>Test Game ID</label>
                         <div class="test-checker-inputs">
                             <input type="text" id="checker-test-value" placeholder="Enter test ID (e.g., 123456789)">
-                            <!-- Extra test inputs will be dynamically added here -->
                             <div id="checker-test-extra-inputs" class="test-extra-inputs hidden"></div>
                         </div>
                         <button class="btn btn-primary btn-sm test-run-btn" onclick="testChecker()">
                             <i class="fas fa-play"></i> Run Test
                         </button>
                     </div>
-
                     <div id="checker-test-result" class="checker-test-result hidden"></div>
                 </div>
 
