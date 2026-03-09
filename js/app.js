@@ -1,6 +1,7 @@
 // ===== Main Application - G2Bulk Integrated + Enhanced Game ID Checker =====
 // ===== + AGGRESSIVE IMAGE CACHING SYSTEM =====
 // ===== + REALTIME SYNC SYSTEM (Firebase onSnapshot) =====
+// ===== + SERVER-SIDE BALANCE VALIDATION =====
 
 // ============================================================
 // ===== IMAGE CACHE SYSTEM — Instant Load & Offline Ready ====
@@ -292,17 +293,18 @@ const RealtimeSync = {
         this._listenSettings();
         this._listenCategories();
         this._listenBanners();
+        this._listenPayments();   // ★ NEW: Payment methods realtime
     },
 
-    // ─── Start category-scoped listeners (called when a category is opened) ─
+    // ─── Start category-scoped listeners ─
     startCategory(categoryId) {
-        this.stopCategory(); // stop any previous
+        this.stopCategory();
         console.log(`🔴 RealtimeSync: Starting category listeners for [${categoryId}]`);
         this._listenProducts(categoryId);
         this._listenCategoryBanners(categoryId);
     },
 
-    // ─── Stop category-scoped listeners (when leaving category page) ─
+    // ─── Stop category-scoped listeners ─
     stopCategory() {
         ['products', 'categoryBanners'].forEach(key => {
             if (this._unsubs[key]) {
@@ -326,6 +328,7 @@ const RealtimeSync = {
 
     // ──────────────────────────────────────────────────────────────────
     // LISTENER: Current user document (balance, status, etc.)
+    // ★★★ CRITICAL: This is the primary balance enforcement mechanism
     // ──────────────────────────────────────────────────────────────────
     _listenUser() {
         if (!App.state.user?.id) return;
@@ -338,21 +341,39 @@ const RealtimeSync = {
                     if (!doc.exists) return;
                     const data = doc.data();
                     const prevBalance = App.state.user?.balance ?? null;
+                    const prevStatus = App.state.user?.status;
 
                     // Merge updated fields into state
                     App.state.user = { ...App.state.user, ...data, id: doc.id };
+
+                    // ── Check if user got banned in realtime ──────────
+                    if (data.status === 'banned' && prevStatus !== 'banned') {
+                        console.warn('🚫 User banned in realtime!');
+                        RealtimeSync.stopAll();
+                        App.showBannedScreen();
+                        return;
+                    }
 
                     // ── Balance changed? ──────────────────────────────
                     if (prevBalance !== null && data.balance !== prevBalance) {
                         const diff = data.balance - prevBalance;
                         const sign = diff > 0 ? '+' : '';
-                        console.log(`💰 Balance updated: ${prevBalance} → ${data.balance}`);
+                        console.log(`💰 Balance updated in realtime: ${prevBalance} → ${data.balance}`);
 
                         // Animate balance change in header
                         this._animateBalanceUpdate(data.balance, diff);
 
+                        // ★ Update buy modal if open (balance changed)
+                        this._updateBuyModalBalance(data.balance);
+
+                        // ★ Update buy button affordability
+                        App.updateBuyButton();
+
                         if (diff > 0) {
                             Utils.showToast(`💰 Balance updated: ${sign}${App.formatNumber ? App.formatNumber(diff) : diff} MMK`, 'success');
+                        } else if (diff < 0 && !App.state.isProcessingPurchase) {
+                            // Balance decreased by admin (not by user purchase)
+                            Utils.showToast(`💰 Balance updated: ${App.formatNumber(diff)} MMK`, 'info');
                         }
                     }
 
@@ -363,6 +384,11 @@ const RealtimeSync = {
                     // If profile page is open, re-render it
                     if (App.state.currentPage === 'profile') {
                         App.renderProfilePage();
+                    }
+
+                    // ★ If topup history page is open, re-render
+                    if (App.state.currentPage === 'history') {
+                        App.renderHistoryPage();
                     }
 
                 }, (error) => {
@@ -394,7 +420,9 @@ const RealtimeSync = {
                     App.updateHeader();
 
                     // Update announcement if on home page
-                    App.loadAnnouncement();
+                    if (App.state.currentPage === 'home') {
+                        App.loadAnnouncement();
+                    }
 
                     console.log('⚙️ Settings updated in realtime');
                 }, (error) => {
@@ -421,7 +449,27 @@ const RealtimeSync = {
                 .onSnapshot((snapshot) => {
                     const categories = [];
                     snapshot.forEach(doc => categories.push({ id: doc.id, ...doc.data() }));
+
+                    const oldCategories = App.state.categories || [];
                     App.state.categories = categories;
+
+                    // ★ If user is currently inside a category that was deleted
+                    if (App.state.currentPage === 'category' && App.state.currentCategory) {
+                        const stillExists = categories.find(c => c.id === App.state.currentCategory.id);
+                        if (!stillExists) {
+                            Utils.showToast('⚠️ This category is no longer available', 'warning');
+                            TelegramApp.hapticFeedback('notification', 'warning');
+                            App.goBack();
+                            return;
+                        }
+                        // ★ Update current category name/data if changed
+                        const updated = categories.find(c => c.id === App.state.currentCategory.id);
+                        if (updated) {
+                            App.state.currentCategory = updated;
+                            const categoryTitle = document.getElementById('category-title');
+                            if (categoryTitle) categoryTitle.textContent = updated.name;
+                        }
+                    }
 
                     // Preload new category icons
                     const iconUrls = categories.map(c => c.icon).filter(Boolean);
@@ -471,6 +519,72 @@ const RealtimeSync = {
             this._unsubs.banners = unsub;
         } catch (e) {
             console.error('RealtimeSync _listenBanners error:', e);
+        }
+    },
+
+    // ──────────────────────────────────────────────────────────────────
+    // ★ NEW LISTENER: Payment methods (realtime)
+    // ──────────────────────────────────────────────────────────────────
+    _listenPayments() {
+        if (this._unsubs.payments) { this._unsubs.payments(); delete this._unsubs.payments; }
+
+        try {
+            const db = firebase.firestore();
+            const unsub = db.collection('paymentMethods')
+                .where('isActive', '==', true)
+                .orderBy('order', 'asc')
+                .onSnapshot((snapshot) => {
+                    const payments = [];
+                    snapshot.forEach(doc => payments.push({ id: doc.id, ...doc.data() }));
+                    App.state.payments = payments;
+
+                    // Preload payment icons
+                    const iconUrls = payments.map(p => p.icon).filter(Boolean);
+                    if (iconUrls.length > 0) ImageCache.preloadAll(iconUrls);
+
+                    // ★ If topup modal is open, re-render payment methods list
+                    const topupModal = document.getElementById('topup-modal');
+                    if (topupModal && !topupModal.classList.contains('hidden')) {
+                        const paymentMethodsEl = document.getElementById('payment-methods');
+                        if (paymentMethodsEl) {
+                            if (payments.length === 0) {
+                                paymentMethodsEl.innerHTML = `<p style="text-align:center;color:var(--text-secondary);">No payment methods available</p>`;
+                            } else {
+                                paymentMethodsEl.innerHTML = `<h4>Select Payment Method</h4>${payments.map(p => `
+                                    <div class="payment-method-item" onclick="selectPayment('${p.id}')">
+                                        <img src="${ImageCache.get(p.icon)}" data-original-src="${p.icon}" alt="${p.name}" class="payment-icon">
+                                        <span class="payment-name">${p.name}</span>
+                                        <i class="fas fa-chevron-right"></i>
+                                    </div>
+                                `).join('')}`;
+                            }
+                        }
+                    }
+
+                    // ★ If selected payment was deleted, clear it
+                    if (App.state.selectedPayment) {
+                        const stillExists = payments.find(p => p.id === App.state.selectedPayment.id);
+                        if (!stillExists) {
+                            App.state.selectedPayment = null;
+                            const detailsModal = document.getElementById('payment-details-modal');
+                            if (detailsModal && !detailsModal.classList.contains('hidden')) {
+                                closePaymentDetails();
+                                Utils.showToast('⚠️ Selected payment method is no longer available', 'warning');
+                            }
+                        } else {
+                            // Update payment details if changed
+                            App.state.selectedPayment = stillExists;
+                        }
+                    }
+
+                    console.log(`💳 Payment methods updated in realtime: ${payments.length} items`);
+                }, (error) => {
+                    console.error('RealtimeSync payments listener error:', error);
+                });
+
+            this._unsubs.payments = unsub;
+        } catch (e) {
+            console.error('RealtimeSync _listenPayments error:', e);
         }
     },
 
@@ -582,7 +696,7 @@ const RealtimeSync = {
     // LISTENER: Orders for current user
     // ──────────────────────────────────────────────────────────────────
     startOrdersListener() {
-        if (this._unsubs.orders) return; // already listening
+        if (this._unsubs.orders) return;
         if (!App.state.user?.telegramId) return;
 
         try {
@@ -605,9 +719,6 @@ const RealtimeSync = {
                                 this._handleOrderStatusChange(oldOrder, newOrder);
                             }
                         }
-                        if (change.type === 'added') {
-                            // New order added (e.g. admin created manually)
-                        }
                     });
 
                     App.state.orders = orders;
@@ -615,6 +726,11 @@ const RealtimeSync = {
                     // If orders page is currently open, re-render
                     if (App.state.currentPage === 'orders') {
                         App.renderOrdersPage();
+                    }
+
+                    // ★ Also update history page if open
+                    if (App.state.currentPage === 'history') {
+                        App.renderHistoryPage();
                     }
 
                     console.log(`📦 Orders updated in realtime: ${orders.length} items`);
@@ -645,7 +761,7 @@ const RealtimeSync = {
                     const topups = [];
                     snapshot.forEach(doc => topups.push({ id: doc.id, ...doc.data() }));
 
-                    // Detect newly approved topups
+                    // Detect newly approved/rejected topups
                     const oldTopups = App.state.topups || [];
                     snapshot.docChanges().forEach(change => {
                         if (change.type === 'modified') {
@@ -697,9 +813,15 @@ const RealtimeSync = {
                 // Show price change banner
                 this._showPriceChangeBanner(newProduct, oldPrice, newPrice);
 
-                // Update buy button price immediately
-                App.updateBuyButton();
+                // ★ Check if user can still afford it
+                const balance = App.state.user?.balance || 0;
+                if (balance < newPrice) {
+                    Utils.showToast(`⚠️ Price increased to ${Utils.formatCurrency(newPrice, newProduct.currency)}. Insufficient balance.`, 'warning');
+                }
             }
+
+            // ★ Update buy button with new price + affordability
+            App.updateBuyButton();
 
             // Update buy modal if it's currently open
             this._updateBuyModalIfOpen(newProduct);
@@ -717,21 +839,22 @@ const RealtimeSync = {
         if (App.state.selectedProduct?.id === deletedProduct.id) {
             App.state.selectedProduct = null;
 
-            // Hide buy modal if open
+            // ★ Hide buy modal if open
             const buyModal = document.getElementById('buy-modal');
             if (buyModal && !buyModal.classList.contains('hidden')) {
                 App.closeBuyModal();
+                Utils.showToast(`⚠️ "${deletedProduct.name}" has been removed and is no longer available`, 'error');
+            } else {
+                Utils.showToast(`⚠️ "${deletedProduct.name}" is no longer available`, 'warning');
             }
 
-            // Show unavailability toast
-            Utils.showToast(`⚠️ "${deletedProduct.name}" is no longer available`, 'warning');
             TelegramApp.hapticFeedback('notification', 'warning');
 
-            // Remove buy button
+            // ★ Update buy button (hide it)
             App.updateBuyButton();
         }
 
-        // Remove card from DOM
+        // Remove card from DOM with animation
         const card = document.querySelector(`.product-card[data-product-id="${deletedProduct.id}"]`);
         if (card) {
             card.style.animation = 'fadeOut 0.3s ease forwards';
@@ -830,7 +953,7 @@ const RealtimeSync = {
         const sortedIds = products.map(p => p.id);
         sortedIds.forEach(id => {
             const card = grid.querySelector(`.product-card[data-product-id="${id}"]`);
-            if (card) grid.appendChild(card); // move to end in order
+            if (card) grid.appendChild(card);
         });
     },
 
@@ -858,6 +981,16 @@ const RealtimeSync = {
         if (statusEl) {
             statusEl.className = `order-status ${order.status}`;
             statusEl.textContent = App.getStatusText(order.status);
+
+            // ★ Flash animation for status change
+            statusEl.style.animation = 'priceFlash 0.6s ease';
+        }
+
+        // ★ Update API status if present
+        const apiStatusEl = card.querySelector('.api-status');
+        if (apiStatusEl && order.apiStatus) {
+            apiStatusEl.className = `api-status ${order.apiStatus.toLowerCase().replace(/\s/g,'-')}`;
+            apiStatusEl.textContent = order.apiStatus;
         }
     },
 
@@ -889,17 +1022,22 @@ const RealtimeSync = {
     },
 
     // ──────────────────────────────────────────────────────────────────
-    // UI HELPER: Update buy modal if currently open
+    // UI HELPER: Update buy modal if currently open (product changed)
     // ──────────────────────────────────────────────────────────────────
     _updateBuyModalIfOpen(product) {
         const modal = document.getElementById('buy-modal');
         if (!modal || modal.classList.contains('hidden')) return;
 
         const price = product.discountedPrice || product.price;
-        const balance = App.state.user.balance || 0;
+        const balance = App.state.user?.balance || 0;
         const remaining = balance - price;
 
+        // ★ Update product name/info in modal
+        const summaryCard = modal.querySelector('.product-summary-card h4');
+        if (summaryCard) summaryCard.textContent = product.name;
+
         const modalPriceEl = document.getElementById('modal-price');
+        const modalBalanceEl = document.getElementById('modal-balance');
         const modalRemainingEl = document.getElementById('modal-remaining');
 
         if (modalPriceEl) {
@@ -907,9 +1045,86 @@ const RealtimeSync = {
             modalPriceEl.style.animation = 'priceFlash 0.6s ease';
         }
 
+        if (modalBalanceEl) {
+            modalBalanceEl.textContent = Utils.formatCurrency(balance, 'MMK');
+        }
+
         if (modalRemainingEl) {
             modalRemainingEl.textContent = Utils.formatCurrency(remaining, 'MMK');
             modalRemainingEl.style.color = remaining >= 0 ? 'var(--success)' : 'var(--danger)';
+        }
+
+        // ★ Disable/enable confirm button based on affordability
+        this._updateConfirmButtonState(balance, price);
+    },
+
+    // ──────────────────────────────────────────────────────────────────
+    // ★ NEW: Update buy modal when BALANCE changes (admin edit, topup)
+    // ──────────────────────────────────────────────────────────────────
+    _updateBuyModalBalance(newBalance) {
+        const modal = document.getElementById('buy-modal');
+        if (!modal || modal.classList.contains('hidden')) return;
+
+        const product = App.state.selectedProduct;
+        if (!product) return;
+
+        const price = product.discountedPrice || product.price;
+        const remaining = newBalance - price;
+
+        const modalBalanceEl = document.getElementById('modal-balance');
+        const modalRemainingEl = document.getElementById('modal-remaining');
+
+        if (modalBalanceEl) {
+            modalBalanceEl.textContent = Utils.formatCurrency(newBalance, 'MMK');
+            modalBalanceEl.style.animation = 'priceFlash 0.6s ease';
+        }
+
+        if (modalRemainingEl) {
+            modalRemainingEl.textContent = Utils.formatCurrency(remaining, 'MMK');
+            modalRemainingEl.style.color = remaining >= 0 ? 'var(--success)' : 'var(--danger)';
+            modalRemainingEl.style.animation = 'priceFlash 0.6s ease';
+        }
+
+        // ★ Disable/enable confirm button
+        this._updateConfirmButtonState(newBalance, price);
+
+        // ★ Show warning if balance now insufficient
+        if (remaining < 0) {
+            Utils.showToast('⚠️ Your balance has changed. Insufficient funds for this purchase.', 'warning');
+        }
+    },
+
+    // ──────────────────────────────────────────────────────────────────
+    // ★ NEW: Enable/Disable confirm purchase button reactively
+    // ──────────────────────────────────────────────────────────────────
+    _updateConfirmButtonState(balance, price) {
+        const confirmBtn = document.querySelector('#buy-modal .confirm-btn, #buy-modal [onclick*="confirmPurchase"]');
+        if (!confirmBtn) return;
+
+        if (balance < price) {
+            confirmBtn.disabled = true;
+            confirmBtn.style.opacity = '0.5';
+            confirmBtn.style.cursor = 'not-allowed';
+            confirmBtn.title = 'Insufficient balance';
+
+            // ★ Add insufficient balance warning in modal
+            let warningEl = document.getElementById('rt-balance-warning');
+            if (!warningEl) {
+                warningEl = document.createElement('div');
+                warningEl.id = 'rt-balance-warning';
+                warningEl.style.cssText = 'background:rgba(239,68,68,0.15);color:var(--danger);padding:10px 15px;border-radius:10px;text-align:center;margin:10px 0;font-size:0.9rem;animation:fadeIn 0.3s ease;';
+                warningEl.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Insufficient balance. Please top up first.';
+                confirmBtn.parentElement.insertBefore(warningEl, confirmBtn);
+            }
+        } else {
+            confirmBtn.disabled = false;
+            confirmBtn.style.opacity = '1';
+            confirmBtn.style.cursor = 'pointer';
+            confirmBtn.title = '';
+
+            // Remove warning if it exists
+            const warningEl = document.getElementById('rt-balance-warning');
+            if (warningEl) warningEl.remove();
         }
     },
 
@@ -928,7 +1143,16 @@ const RealtimeSync = {
         const badge = document.createElement('span');
         badge.className = `balance-diff-badge ${diff > 0 ? 'positive' : 'negative'}`;
         badge.textContent = `${diff > 0 ? '+' : ''}${App.formatNumber(diff)}`;
-        balanceEl.parentElement.appendChild(badge);
+
+        // ★ Safely append badge
+        const parent = balanceEl.parentElement;
+        if (parent) {
+            // Remove any existing badge first
+            const existingBadge = parent.querySelector('.balance-diff-badge');
+            if (existingBadge) existingBadge.remove();
+
+            parent.appendChild(badge);
+        }
 
         setTimeout(() => {
             balanceEl.classList.remove('balance-updating');
@@ -1072,7 +1296,6 @@ const OrderChecker = {
                         apiCharge: result.charge
                     });
                     try { await TelegramBot.notifyOrderCompleted(order); } catch(e) { console.warn('Notify error:', e); }
-                    // RealtimeSync will handle UI update via onSnapshot
                     break;
                     
                 case 'Canceled':
@@ -1955,10 +2178,16 @@ const App = {
         
         if (this.state.selectedProduct) {
             const price = this.state.selectedProduct.discountedPrice || this.state.selectedProduct.price;
+            const balance = this.state.user?.balance || 0;
+            const canAfford = balance >= price;
+
             container.innerHTML = `
-                <button class="buy-now-btn" onclick="App.openBuyModal()">
+                <button class="buy-now-btn ${!canAfford ? 'insufficient' : ''}" 
+                        onclick="App.openBuyModal()"
+                        ${!canAfford ? 'title="Insufficient balance"' : ''}>
                     <i class="fas fa-shopping-cart"></i>
                     Buy Now - ${Utils.formatCurrency(price, this.state.selectedProduct.currency)}
+                    ${!canAfford ? ' <small style="opacity:0.8;">(Insufficient balance)</small>' : ''}
                 </button>
             `;
             container.classList.remove('hidden');
@@ -1982,6 +2211,17 @@ const App = {
             Utils.showToast('Please select a product', 'warning');
             return;
         }
+
+        // ★ Re-verify product still exists in realtime state
+        const currentProduct = this.state.products.find(p => p.id === this.state.selectedProduct.id);
+        if (!currentProduct) {
+            Utils.showToast('⚠️ This product is no longer available', 'error');
+            this.state.selectedProduct = null;
+            this.updateBuyButton();
+            return;
+        }
+        // Use latest product data
+        this.state.selectedProduct = currentProduct;
         
         TelegramApp.hapticFeedback('impact', 'medium');
         
@@ -2030,15 +2270,28 @@ const App = {
         if (verificationSection) {
             verificationSection.classList.add('hidden');
         }
+
+        // ★ Remove any leftover balance warning
+        const warningEl = document.getElementById('rt-balance-warning');
+        if (warningEl) warningEl.remove();
         
         document.getElementById('buy-modal').classList.remove('hidden');
+
+        // ★ Check confirm button state based on current balance
+        RealtimeSync._updateConfirmButtonState(balance, price);
     },
     
     closeBuyModal() {
         document.getElementById('buy-modal').classList.add('hidden');
-        document.getElementById('verification-code').value = '';
+        const verCode = document.getElementById('verification-code');
+        if (verCode) verCode.value = '';
+
+        // ★ Clean up balance warning
+        const warningEl = document.getElementById('rt-balance-warning');
+        if (warningEl) warningEl.remove();
     },
     
+    // ★★★ CRITICAL METHOD: Server-side balance validation before purchase ★★★
     async confirmPurchase() {
         if (this.state.isProcessingPurchase) {
             Utils.showToast('Purchase already in progress...', 'warning');
@@ -2047,7 +2300,7 @@ const App = {
         
         const product = this.state.selectedProduct;
 
-        // ── Re-check product still exists in realtime state ────────────
+        // ── Step 1: Re-check product still exists in realtime state ────
         const currentProduct = this.state.products.find(p => p.id === product.id);
         if (!currentProduct) {
             Utils.showToast('⚠️ This product is no longer available', 'error');
@@ -2060,8 +2313,39 @@ const App = {
         // Use latest price from realtime state
         const price = currentProduct.discountedPrice || currentProduct.price;
         
-        if ((this.state.user.balance || 0) < price) {
+        // ── Step 2: ★★★ CRITICAL — Read FRESH balance from Firestore ★★★ ──
+        // This prevents purchase when admin has set balance to 0,
+        // even if the local state hasn't caught up yet
+        let freshBalance;
+        try {
+            const userDocRef = firebase.firestore().collection('users').doc(this.state.user.id);
+            const userDoc = await userDocRef.get();
+            
+            if (!userDoc.exists) {
+                Utils.showToast('❌ User account not found', 'error');
+                return;
+            }
+            
+            freshBalance = userDoc.data()?.balance ?? 0;
+            
+            // ★ Sync local state with server truth
+            this.state.user.balance = freshBalance;
+            this.updateHeader(); // Update header to show fresh balance
+            
+            console.log(`🔒 Server-side balance check: ${freshBalance} (need: ${price})`);
+            
+        } catch (fetchError) {
+            console.error('❌ Failed to verify balance from server:', fetchError);
+            Utils.showToast('❌ Unable to verify balance. Please try again.', 'error');
+            return;
+        }
+
+        // ── Step 3: Check balance sufficiency using SERVER value ────
+        if (freshBalance < price) {
             TelegramApp.hapticFeedback('notification', 'error');
+            
+            // ★ Update modal to show real balance
+            RealtimeSync._updateBuyModalBalance(freshBalance);
             
             const attempts = await Database.incrementFailedAttempts(this.state.user.telegramId);
             if (attempts >= CONFIG.MAX_FAILED_PURCHASE_ATTEMPTS) {
@@ -2075,9 +2359,47 @@ const App = {
                 return;
             }
             
-            Utils.showToast(`Insufficient balance! (${CONFIG.MAX_FAILED_PURCHASE_ATTEMPTS - attempts} attempts remaining)`, 'error');
+            Utils.showToast(`Insufficient balance! Your actual balance is ${Utils.formatCurrency(freshBalance, 'MMK')}. (${CONFIG.MAX_FAILED_PURCHASE_ATTEMPTS - attempts} attempts remaining)`, 'error');
             return;
         }
+
+        // ── Step 4: Also re-verify product exists in Firestore ────
+        try {
+            const productDoc = await firebase.firestore().collection('products').doc(currentProduct.id).get();
+            if (!productDoc.exists || !productDoc.data()?.isActive) {
+                Utils.showToast('⚠️ This product is no longer available', 'error');
+                this.closeBuyModal();
+                this.state.selectedProduct = null;
+                this.updateBuyButton();
+                return;
+            }
+
+            // ★ Use the absolute latest price from server
+            const serverProductData = productDoc.data();
+            const serverPrice = serverProductData.discountedPrice || serverProductData.price;
+            
+            if (serverPrice !== price) {
+                console.log(`💰 Price changed on server: ${price} → ${serverPrice}`);
+                // Update local state
+                Object.assign(currentProduct, serverProductData);
+                this.state.selectedProduct = currentProduct;
+                
+                if (freshBalance < serverPrice) {
+                    Utils.showToast(`⚠️ Price changed to ${Utils.formatCurrency(serverPrice, currentProduct.currency)}. Insufficient balance.`, 'error');
+                    RealtimeSync._updateBuyModalIfOpen(currentProduct);
+                    return;
+                }
+                
+                // Use server price for deduction
+                Utils.showToast(`ℹ️ Price updated to ${Utils.formatCurrency(serverPrice, currentProduct.currency)}`, 'info');
+            }
+        } catch (productCheckError) {
+            console.warn('Product verification warning:', productCheckError);
+            // Continue with local data if product check fails
+        }
+
+        // ── Step 5: Proceed with purchase ────
+        const finalPrice = currentProduct.discountedPrice || currentProduct.price;
         
         this.state.isProcessingPurchase = true;
         Utils.showLoading('Processing order...');
@@ -2087,9 +2409,9 @@ const App = {
         let balanceRefunded = false;
         
         try {
-            await Database.updateUserBalance(this.state.user.telegramId, price, 'subtract');
+            await Database.updateUserBalance(this.state.user.telegramId, finalPrice, 'subtract');
             balanceDeducted = true;
-            // state.user.balance will be updated via RealtimeSync onSnapshot automatically
+            // state.user.balance will be updated via RealtimeSync onSnapshot
             
             const link = this.buildGameLink(this.state.inputValues);
             
@@ -2100,7 +2422,7 @@ const App = {
                 productName: currentProduct.name,
                 categoryId: this.state.currentCategory.id,
                 categoryName: this.state.currentCategory.name,
-                amount: price,
+                amount: finalPrice,
                 currency: currentProduct.currency,
                 inputValues: this.state.inputValues,
                 serviceId: currentProduct.serviceId,
@@ -2136,7 +2458,7 @@ const App = {
                             
                         } else {
                             if (balanceDeducted && !balanceRefunded) {
-                                await Database.updateUserBalance(this.state.user.telegramId, price, 'add');
+                                await Database.updateUserBalance(this.state.user.telegramId, finalPrice, 'add');
                                 balanceRefunded = true;
                             }
                             
@@ -2155,7 +2477,7 @@ const App = {
                     console.error('G2Bulk API call failed:', apiError);
                     
                     if (balanceDeducted && !balanceRefunded) {
-                        await Database.updateUserBalance(this.state.user.telegramId, price, 'add');
+                        await Database.updateUserBalance(this.state.user.telegramId, finalPrice, 'add');
                         balanceRefunded = true;
                     }
                     
@@ -2179,7 +2501,7 @@ const App = {
             this.state.inputValues = {};
             this.state.checkerResults = {};
 
-            // Soft re-render to clear input fields
+            // Soft re-render to clear input fields & selections
             if (this.state.currentPage === 'category') {
                 this.renderCategoryPage();
             }
@@ -2189,7 +2511,7 @@ const App = {
             
             if (balanceDeducted && !balanceRefunded) {
                 try {
-                    await Database.updateUserBalance(this.state.user.telegramId, price, 'add');
+                    await Database.updateUserBalance(this.state.user.telegramId, finalPrice, 'add');
                     balanceRefunded = true;
                     console.log('🔄 Emergency refund completed');
                 } catch(refundError) {
@@ -2408,7 +2730,6 @@ const App = {
     // ===== PROFILE PAGE =====
     
     async renderProfilePage() {
-        // state.user is already up-to-date via RealtimeSync
         const user = this.state.user;
         
         const pa = document.getElementById('profile-avatar');
@@ -2481,7 +2802,10 @@ async function openTopupModalHandler() {
     const modal = document.getElementById('topup-modal');
     const paymentMethods = document.getElementById('payment-methods');
     
-    const payments = await Database.getPaymentMethods();
+    // ★ Use realtime state payments (already listening via _listenPayments)
+    const payments = App.state.payments.length > 0
+        ? App.state.payments
+        : await Database.getPaymentMethods();
     App.state.payments = payments;
     
     const paymentIconUrls = payments.map(p => p.icon).filter(Boolean);
@@ -2506,6 +2830,10 @@ async function openTopupModalHandler() {
 
 function selectPayment(paymentId) {
     const payment = App.state.payments.find(p => p.id === paymentId);
+    if (!payment) {
+        Utils.showToast('⚠️ Payment method not available', 'warning');
+        return;
+    }
     App.state.selectedPayment = payment;
     closeTopupModal();
     openPaymentDetails(payment);
@@ -2587,6 +2915,14 @@ function removeProof() {
 async function submitTopup() {
     if (!App.state.proofImage || !App.state.selectedPayment || !App.state.topupAmount) {
         Utils.showToast('Please complete all fields', 'warning');
+        return;
+    }
+
+    // ★ Re-verify payment method still exists
+    const paymentStillExists = App.state.payments.find(p => p.id === App.state.selectedPayment.id);
+    if (!paymentStillExists) {
+        Utils.showToast('⚠️ Selected payment method is no longer available', 'error');
+        closePaymentDetails();
         return;
     }
     
