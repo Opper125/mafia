@@ -1,4 +1,299 @@
 // ===== Main Application - G2Bulk Integrated + Enhanced Game ID Checker =====
+// ===== + AGGRESSIVE IMAGE CACHING SYSTEM =====
+
+// ============================================================
+// ===== IMAGE CACHE SYSTEM — Instant Load & Offline Ready ====
+// ============================================================
+const ImageCache = {
+    DB_NAME: 'GameShopImageCache',
+    DB_VERSION: 1,
+    STORE_NAME: 'cached_images',
+    memCache: new Map(),
+    pendingLoads: new Set(),
+    db: null,
+    isReady: false,
+    observer: null,
+
+    async init() {
+        try {
+            this.db = await this._openDB();
+            await this._loadAllToMemory();
+            this._startObserver();
+            this.isReady = true;
+            console.log(`🖼️ ImageCache ready: ${this.memCache.size} images in persistent cache`);
+        } catch (e) {
+            console.warn('🖼️ ImageCache init (IndexedDB) failed, using fallback:', e);
+            this._startObserver();
+        }
+    },
+
+    _openDB() {
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open(this.DB_NAME, this.DB_VERSION);
+            req.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(this.STORE_NAME)) {
+                    db.createObjectStore(this.STORE_NAME, { keyPath: 'url' });
+                }
+            };
+            req.onsuccess = (e) => resolve(e.target.result);
+            req.onerror = (e) => reject(e.target.error);
+        });
+    },
+
+    async _loadAllToMemory() {
+        if (!this.db) return;
+        return new Promise((resolve) => {
+            try {
+                const tx = this.db.transaction(this.STORE_NAME, 'readonly');
+                const store = tx.objectStore(this.STORE_NAME);
+                const req = store.getAll();
+                req.onsuccess = () => {
+                    const items = req.result || [];
+                    items.forEach(item => {
+                        if (item.url && item.data) {
+                            this.memCache.set(item.url, item.data);
+                        }
+                    });
+                    resolve();
+                };
+                req.onerror = () => resolve();
+            } catch (e) {
+                resolve();
+            }
+        });
+    },
+
+    async _saveToDB(url, base64) {
+        if (!this.db) return;
+        return new Promise((resolve) => {
+            try {
+                const tx = this.db.transaction(this.STORE_NAME, 'readwrite');
+                const store = tx.objectStore(this.STORE_NAME);
+                store.put({ url: url, data: base64, ts: Date.now() });
+                tx.oncomplete = () => resolve(true);
+                tx.onerror = () => resolve(false);
+            } catch (e) {
+                resolve(false);
+            }
+        });
+    },
+
+    _blobToBase64(blob) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    },
+
+    // Get cached data URL for a given URL. Returns original if not cached.
+    get(url) {
+        if (!url || url.startsWith('data:') || url.startsWith('blob:')) return url;
+        return this.memCache.get(url) || url;
+    },
+
+    has(url) {
+        return this.memCache.has(url);
+    },
+
+    // Preload a single image: fetch → base64 → IndexedDB + memory
+    async preload(url) {
+        if (!url || url.startsWith('data:') || url.startsWith('blob:')) return;
+        if (this.memCache.has(url) || this.pendingLoads.has(url)) return;
+
+        this.pendingLoads.add(url);
+
+        try {
+            const response = await fetch(url, { cache: 'force-cache' });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+            const blob = await response.blob();
+
+            // Skip very large images (> 10MB) — just browser-cache them
+            if (blob.size > 10 * 1024 * 1024) {
+                new Image().src = url;
+                return;
+            }
+
+            const base64 = await this._blobToBase64(blob);
+            this.memCache.set(url, base64);
+            await this._saveToDB(url, base64);
+
+            // Apply to any existing DOM images
+            this._applyToDOM(url, base64);
+
+        } catch (e) {
+            // CORS or network failure — fallback to browser-level preload
+            try {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.src = url;
+            } catch (ee) { /* ignore */ }
+        } finally {
+            this.pendingLoads.delete(url);
+        }
+    },
+
+    // Preload many URLs in batches
+    async preloadAll(urls) {
+        if (!urls || urls.length === 0) return;
+
+        const unique = [...new Set(
+            urls.filter(u => u && typeof u === 'string' && !u.startsWith('data:') && !u.startsWith('blob:'))
+        )];
+
+        if (unique.length === 0) return;
+
+        // Immediately preload ALL via new Image() for browser cache (parallel, fast)
+        unique.forEach(url => {
+            if (!this.memCache.has(url)) {
+                const img = new Image();
+                img.src = url;
+            }
+        });
+
+        // Then fetch + persist uncached ones in IndexedDB (batched)
+        const uncached = unique.filter(url => !this.memCache.has(url));
+        if (uncached.length === 0) return;
+
+        console.log(`🖼️ Preloading ${uncached.length} new images to persistent cache...`);
+
+        const batchSize = 4;
+        for (let i = 0; i < uncached.length; i += batchSize) {
+            const batch = uncached.slice(i, i + batchSize);
+            await Promise.allSettled(batch.map(u => this.preload(u)));
+        }
+
+        console.log(`🖼️ Preload complete. Total cached: ${this.memCache.size}`);
+    },
+
+    // Collect all image URLs from app state
+    collectUrls(state) {
+        const urls = [];
+
+        if (state.settings?.websiteLogo) urls.push(state.settings.websiteLogo);
+        if (state.user?.photoUrl) urls.push(state.user.photoUrl);
+
+        if (state.banners) state.banners.forEach(b => { if (b.image) urls.push(b.image); });
+        if (state.categories) state.categories.forEach(c => { if (c.icon) urls.push(c.icon); });
+        if (state.products) state.products.forEach(p => { if (p.icon) urls.push(p.icon); });
+        if (state.payments) state.payments.forEach(p => { if (p.icon) urls.push(p.icon); });
+        if (state.categoryBanners) state.categoryBanners.forEach(b => { if (b.image) urls.push(b.image); });
+
+        return urls;
+    },
+
+    // Apply cached data to matching img elements in the DOM
+    _applyToDOM(originalUrl, cachedData) {
+        document.querySelectorAll('img').forEach(img => {
+            const src = img.getAttribute('data-original-src') || img.getAttribute('src');
+            if (src === originalUrl && !img.src.startsWith('data:')) {
+                img.setAttribute('data-original-src', originalUrl);
+                img.src = cachedData;
+            }
+        });
+    },
+
+    // Apply all cached images to the entire current DOM
+    applyAllToDOM() {
+        document.querySelectorAll('img').forEach(img => {
+            const src = img.getAttribute('data-original-src') || img.getAttribute('src');
+            if (src && !src.startsWith('data:') && !src.startsWith('blob:')) {
+                const cached = this.memCache.get(src);
+                if (cached && img.src !== cached) {
+                    img.setAttribute('data-original-src', src);
+                    img.src = cached;
+                }
+            }
+        });
+    },
+
+    // MutationObserver: auto-apply cache to any new/changed images in DOM
+    _startObserver() {
+        if (this.observer) return;
+
+        this.observer = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                // Handle newly added nodes
+                for (const node of mutation.addedNodes) {
+                    if (node.nodeType !== 1) continue;
+                    const imgs = node.tagName === 'IMG' ? [node] :
+                                 (node.querySelectorAll ? [...node.querySelectorAll('img')] : []);
+                    for (const img of imgs) {
+                        this._processNewImg(img);
+                    }
+                }
+
+                // Handle src attribute changes on existing images
+                if (mutation.type === 'attributes' && mutation.attributeName === 'src') {
+                    const target = mutation.target;
+                    if (target && target.tagName === 'IMG') {
+                        const newSrc = target.getAttribute('src');
+                        // Only process if src is a network URL (not already cached data)
+                        if (newSrc && !newSrc.startsWith('data:') && !newSrc.startsWith('blob:')) {
+                            this._processNewImg(target);
+                        }
+                    }
+                }
+            }
+        });
+
+        this.observer.observe(document.documentElement, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['src']
+        });
+    },
+
+    _processNewImg(img) {
+        const src = img.getAttribute('src');
+        if (!src || src.startsWith('data:') || src.startsWith('blob:')) return;
+
+        const cached = this.memCache.get(src);
+        if (cached) {
+            // Instant: apply cached version
+            img.setAttribute('data-original-src', src);
+            img.src = cached;
+        } else {
+            // Background: fetch, cache, then apply
+            this.preload(src);
+        }
+    },
+
+    // Cleanup: remove cache entries older than maxAgeDays
+    async cleanup(maxAgeDays = 30) {
+        if (!this.db) return;
+        const cutoff = Date.now() - (maxAgeDays * 24 * 60 * 60 * 1000);
+
+        return new Promise((resolve) => {
+            try {
+                const tx = this.db.transaction(this.STORE_NAME, 'readwrite');
+                const store = tx.objectStore(this.STORE_NAME);
+                const req = store.openCursor();
+
+                req.onsuccess = (e) => {
+                    const cursor = e.target.result;
+                    if (cursor) {
+                        if (cursor.value.ts && cursor.value.ts < cutoff) {
+                            cursor.delete();
+                            this.memCache.delete(cursor.value.url);
+                        }
+                        cursor.continue();
+                    }
+                };
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => resolve();
+            } catch (e) {
+                resolve();
+            }
+        });
+    }
+};
+window.ImageCache = ImageCache;
+
 
 // ===== G2Bulk Reseller API (FIXED: Retry + Timeout) =====
 const G2BulkAPI = {
@@ -452,12 +747,15 @@ const App = {
         isLoading: false,
         customEmojis: [],
         checkerResults: {},
-        isProcessingPurchase: false  // ADDED: prevent double-click
+        isProcessingPurchase: false
     },
     
     async init() {
         try {
             console.log('🚀 Initializing App v' + CONFIG.VERSION);
+            
+            // Initialize ImageCache FIRST (loads persisted cache from IndexedDB)
+            await ImageCache.init();
             
             if (!TelegramApp.isInTelegram()) {
                 this.showAccessDenied();
@@ -485,11 +783,19 @@ const App = {
             });
             
             await this.loadAppData();
+            
+            // Preload ALL images from loaded data into persistent cache
+            const allImageUrls = ImageCache.collectUrls(this.state);
+            ImageCache.preloadAll(allImageUrls); // runs in background, non-blocking
+            
             this.setupUI();
             this.hideIntro();
             TelegramApp.ready();
             
             OrderChecker.start();
+            
+            // Periodic cache cleanup (older than 30 days)
+            ImageCache.cleanup(30);
             
             console.log('✅ App initialized successfully!');
             
@@ -526,7 +832,13 @@ const App = {
             try {
                 const settings = await Database.getSettings();
                 this.state.settings = settings;
-                introLogo.src = settings.websiteLogo || this.getDefaultLogo();
+                const logoUrl = settings.websiteLogo || this.getDefaultLogo();
+                // Use cached logo if available (instant display)
+                introLogo.src = ImageCache.get(logoUrl);
+                // Also preload the logo for future visits
+                if (logoUrl && !logoUrl.startsWith('data:')) {
+                    ImageCache.preload(logoUrl);
+                }
             } catch (e) {
                 introLogo.src = this.getDefaultLogo();
             }
@@ -599,7 +911,9 @@ const App = {
         const userBalance = document.getElementById('user-balance');
         
         if (this.state.settings) {
-            if (this.state.settings.websiteLogo) appLogo.src = this.state.settings.websiteLogo;
+            if (this.state.settings.websiteLogo) {
+                appLogo.src = ImageCache.get(this.state.settings.websiteLogo);
+            }
             if (this.state.settings.websiteName) appName.textContent = this.state.settings.websiteName;
         }
         
@@ -618,7 +932,8 @@ const App = {
         
         if (this.state.user) {
             userName.textContent = (this.state.user.firstName + ' ' + (this.state.user.lastName || '')).trim() || 'User';
-            userAvatar.src = this.state.user.photoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(this.state.user.firstName || 'U')}&background=8b5cf6&color=fff`;
+            const avatarUrl = this.state.user.photoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(this.state.user.firstName || 'U')}&background=8b5cf6&color=fff`;
+            userAvatar.src = ImageCache.get(avatarUrl);
         }
     },
     
@@ -631,7 +946,10 @@ const App = {
             return;
         }
         
-        bannerTrack.innerHTML = this.state.banners.map((banner, i) => `<div class="banner-slide"><img src="${banner.image}" alt="Banner ${i + 1}"></div>`).join('');
+        bannerTrack.innerHTML = this.state.banners.map((banner, i) => 
+            `<div class="banner-slide"><img src="${ImageCache.get(banner.image)}" data-original-src="${banner.image}" alt="Banner ${i + 1}"></div>`
+        ).join('');
+        
         bannerDots.innerHTML = this.state.banners.map((_, i) => `<div class="banner-dot ${i === 0 ? 'active' : ''}" data-index="${i}"></div>`).join('');
         
         if (this.state.banners.length > 1) this.setupBannerSlider();
@@ -673,14 +991,13 @@ const App = {
             <div class="category-card stagger-item" onclick="App.openCategory('${cat.id}')" style="animation-delay:${i * 0.05}s">
                 ${cat.flag ? `<span class="category-flag">${cat.flag}</span>` : ''}
                 ${cat.hasDiscount ? `<span class="category-discount"><i class="fas fa-percent"></i> Sale</span>` : ''}
-                <img src="${cat.icon}" alt="${cat.name}" class="category-icon">
+                <img src="${ImageCache.get(cat.icon)}" data-original-src="${cat.icon}" alt="${cat.name}" class="category-icon">
                 <div class="category-name">${renderCustomEmojis(cat.name)}</div>
                 <div class="category-sold"><i class="fas fa-fire"></i> ${cat.totalSold || 0} sold</div>
             </div>
         `).join('');
     },
     
-    // UPDATED: Auto-generate Game ID input for G2Bulk products
     async openCategory(categoryId) {
         TelegramApp.hapticFeedback('impact', 'light');
         Utils.showLoading('Loading products...');
@@ -700,7 +1017,6 @@ const App = {
             this.state.inputValues = {};
             this.state.checkerResults = {};
             
-            // FIXED: Auto-generate Game ID input for G2Bulk products if none configured
             const hasG2BulkProducts = products && products.some(p => p.serviceId);
             if (inputTables && inputTables.length > 0) {
                 this.state.inputTables = inputTables;
@@ -715,6 +1031,14 @@ const App = {
                 console.log('📋 Auto-generated Game ID input for G2Bulk products');
             } else {
                 this.state.inputTables = [];
+            }
+            
+            // Preload product & category banner images for this category
+            const categoryImageUrls = [];
+            if (products) products.forEach(p => { if (p.icon) categoryImageUrls.push(p.icon); });
+            if (categoryBanners) categoryBanners.forEach(b => { if (b.image) categoryImageUrls.push(b.image); });
+            if (categoryImageUrls.length > 0) {
+                ImageCache.preloadAll(categoryImageUrls); // background, non-blocking
             }
             
             this.renderCategoryPage();
@@ -736,7 +1060,6 @@ const App = {
         
         categoryTitle.textContent = this.state.currentCategory.name;
         
-        // Input tables with enhanced checker support
         if (this.state.inputTables?.length > 0) {
             inputSection.innerHTML = this.state.inputTables.map(table => `
                 <div class="input-group" data-table-id="${table.id}">
@@ -762,13 +1085,12 @@ const App = {
             inputSection.classList.add('hidden');
         }
         
-        // Products
         if (this.state.products?.length > 0) {
             productsGrid.innerHTML = this.state.products.map(product => `
                 <div class="product-card ${this.state.selectedProduct?.id === product.id ? 'selected' : ''}" 
                      onclick="App.selectProduct('${product.id}')" data-product-id="${product.id}">
                     ${product.discount > 0 ? `<span class="product-discount-badge">-${product.discount}%</span>` : ''}
-                    <img src="${product.icon}" alt="${product.name}" class="product-icon">
+                    <img src="${ImageCache.get(product.icon)}" data-original-src="${product.icon}" alt="${product.name}" class="product-icon">
                     <div class="product-name">${renderCustomEmojis(product.name)}</div>
                     <div class="product-price">
                         ${product.discount > 0 ? `<span class="original">${Utils.formatCurrency(product.price, product.currency)}</span>` : ''}
@@ -784,11 +1106,10 @@ const App = {
             productsGrid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;text-align:center;padding:2rem;"><i class="fas fa-box-open" style="font-size:3rem;color:var(--text-secondary);margin-bottom:1rem;"></i><p style="color:var(--text-secondary);">No products available</p></div>`;
         }
         
-        // Category info
         if (this.state.categoryBanners?.length > 0) {
             const banner = this.state.categoryBanners[0];
             categoryInfoSection.innerHTML = `
-                <img src="${banner.image}" alt="Banner" class="category-banner">
+                <img src="${ImageCache.get(banner.image)}" data-original-src="${banner.image}" alt="Banner" class="category-banner">
                 ${banner.description ? `<div class="category-description"><h3><i class="fas fa-info-circle"></i> Information</h3><p>${banner.description}</p></div>` : ''}
             `;
             categoryInfoSection.classList.remove('hidden');
@@ -1031,7 +1352,7 @@ const App = {
         
         document.getElementById('product-summary').innerHTML = `
             <div class="product-summary-card">
-                <img src="${product.icon}" alt="${product.name}">
+                <img src="${ImageCache.get(product.icon)}" data-original-src="${product.icon}" alt="${product.name}">
                 <div>
                     <h4>${product.name}</h4>
                     <p>${this.state.currentCategory.name}</p>
@@ -1068,9 +1389,7 @@ const App = {
         document.getElementById('verification-code').value = '';
     },
     
-    // ===== FIXED: confirmPurchase - No double refund, retry-safe =====
     async confirmPurchase() {
-        // Prevent double-click / concurrent purchases
         if (this.state.isProcessingPurchase) {
             Utils.showToast('Purchase already in progress...', 'warning');
             return;
@@ -1098,25 +1417,20 @@ const App = {
             return;
         }
         
-        // Lock purchase
         this.state.isProcessingPurchase = true;
         Utils.showLoading('Processing order...');
         TelegramApp.hapticFeedback('impact', 'heavy');
         
-        // Track balance state to prevent double refund
         let balanceDeducted = false;
         let balanceRefunded = false;
         
         try {
-            // Step 1: Deduct balance
             await Database.updateUserBalance(this.state.user.telegramId, price, 'subtract');
             balanceDeducted = true;
             this.state.user.balance -= price;
             
-            // Step 2: Build link from inputs
             const link = this.buildGameLink(this.state.inputValues);
             
-            // Step 3: Create order record
             const order = await Database.createOrder({
                 userId: this.state.user.id,
                 telegramId: this.state.user.telegramId,
@@ -1131,13 +1445,11 @@ const App = {
                 link: link
             });
             
-            // Step 4: Process via G2Bulk API if serviceId exists
             if (product.serviceId) {
                 try {
                     const apiResult = await G2BulkAPI.placeOrder(product.serviceId, link, 1);
                     
                     if (apiResult && apiResult.order) {
-                        // SUCCESS: API order placed
                         await Database.updateOrderApiStatus(order.id, {
                             apiOrderId: apiResult.order,
                             apiStatus: 'Processing',
@@ -1150,7 +1462,6 @@ const App = {
                         
                     } else if (apiResult && apiResult.error) {
                         if (G2BulkAPI.isBalanceError(apiResult.error)) {
-                            // QUEUED: API balance insufficient
                             await Database.updateOrderApiStatus(order.id, {
                                 apiStatus: 'Queued',
                                 status: 'queued',
@@ -1162,7 +1473,6 @@ const App = {
                             try { await TelegramBot.notifyOrderQueued(order, this.state.user); } catch(e) { console.warn('Notify error:', e); }
                             
                         } else {
-                            // FAILED: Non-balance API error - Refund ONCE
                             if (balanceDeducted && !balanceRefunded) {
                                 await Database.updateUserBalance(this.state.user.telegramId, price, 'add');
                                 balanceRefunded = true;
@@ -1180,7 +1490,6 @@ const App = {
                         }
                     }
                 } catch (apiError) {
-                    // NETWORK ERROR - Refund ONLY if not already refunded
                     console.error('G2Bulk API call failed:', apiError);
                     
                     if (balanceDeducted && !balanceRefunded) {
@@ -1198,17 +1507,14 @@ const App = {
                     Utils.showToast('❌ Connection error. Balance refunded.', 'error');
                 }
             } else {
-                // Manual order (no serviceId)
                 this.closeBuyModal();
                 Utils.showToast('📦 Order placed! Awaiting processing.', 'success');
                 try { await TelegramBot.notifyNewOrder(order, this.state.user); } catch(e) { console.warn('Notify error:', e); }
             }
             
-            // Step 5: Always sync balance from DB
             await this.refreshUserData();
             this.state.orders.unshift(order);
             
-            // Step 6: Reset selections
             this.state.selectedProduct = null;
             this.state.inputValues = {};
             this.state.checkerResults = {};
@@ -1217,7 +1523,6 @@ const App = {
         } catch (error) {
             console.error('Purchase error:', error);
             
-            // Emergency refund if balance was deducted but not yet refunded
             if (balanceDeducted && !balanceRefunded) {
                 try {
                     await Database.updateUserBalance(this.state.user.telegramId, price, 'add');
@@ -1231,7 +1536,6 @@ const App = {
             await this.refreshUserData();
             Utils.showToast('Failed to process order: ' + error.message, 'error');
         } finally {
-            // Always unlock
             this.state.isProcessingPurchase = false;
             Utils.hideLoading();
         }
@@ -1446,7 +1750,10 @@ const App = {
         const user = this.state.user;
         
         const pa = document.getElementById('profile-avatar');
-        if (pa) pa.src = user.photoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.firstName || 'U')}&background=8b5cf6&color=fff&size=150`;
+        if (pa) {
+            const avatarUrl = user.photoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.firstName || 'U')}&background=8b5cf6&color=fff&size=150`;
+            pa.src = ImageCache.get(avatarUrl);
+        }
         
         const pn = document.getElementById('profile-name');
         if (pn) pn.textContent = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'User';
@@ -1515,12 +1822,18 @@ async function openTopupModalHandler() {
     const payments = await Database.getPaymentMethods();
     App.state.payments = payments;
     
+    // Preload payment icons
+    const paymentIconUrls = payments.map(p => p.icon).filter(Boolean);
+    if (paymentIconUrls.length > 0) {
+        ImageCache.preloadAll(paymentIconUrls);
+    }
+    
     if (payments.length === 0) {
         paymentMethods.innerHTML = `<p style="text-align:center;color:var(--text-secondary);">No payment methods available</p>`;
     } else {
         paymentMethods.innerHTML = `<h4>Select Payment Method</h4>${payments.map(p => `
             <div class="payment-method-item" onclick="selectPayment('${p.id}')">
-                <img src="${p.icon}" alt="${p.name}" class="payment-icon">
+                <img src="${ImageCache.get(p.icon)}" data-original-src="${p.icon}" alt="${p.name}" class="payment-icon">
                 <span class="payment-name">${p.name}</span>
                 <i class="fas fa-chevron-right"></i>
             </div>
@@ -1550,7 +1863,7 @@ function openPaymentDetails(payment) {
     const paymentInfo = document.getElementById('payment-info');
     
     paymentInfo.innerHTML = `
-        <div class="payment-detail-card"><img src="${payment.icon}" alt="${payment.name}" style="width:60px;height:60px;border-radius:12px;"><h4>${payment.name}</h4></div>
+        <div class="payment-detail-card"><img src="${ImageCache.get(payment.icon)}" data-original-src="${payment.icon}" alt="${payment.name}" style="width:60px;height:60px;border-radius:12px;"><h4>${payment.name}</h4></div>
         <div class="payment-detail-item"><span>Amount to Pay:</span><strong>${Utils.formatCurrency(App.state.topupAmount, 'MMK')}</strong></div>
         <div class="payment-detail-item"><span>Account Number:</span><strong>${payment.address}</strong>
             <button onclick="Utils.copyToClipboard('${payment.address}')" style="margin-left:8px;background:var(--gradient-glow);border:none;padding:5px 10px;border-radius:8px;cursor:pointer;"><i class="fas fa-copy"></i></button>
@@ -1673,7 +1986,7 @@ function renderCustomEmojis(text) {
     let result = text;
     App.state.customEmojis.forEach(emoji => {
         const escaped = emoji.trigger.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        result = result.replace(new RegExp(escaped, 'g'), `<img class="custom-emoji" src="${emoji.imageUrl}" alt="${emoji.name || 'emoji'}">`);
+        result = result.replace(new RegExp(escaped, 'g'), `<img class="custom-emoji" src="${ImageCache.get(emoji.imageUrl)}" data-original-src="${emoji.imageUrl}" alt="${emoji.name || 'emoji'}">`);
     });
     return result;
 }
