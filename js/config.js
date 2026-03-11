@@ -8,6 +8,8 @@ const CONFIG = {
     // Admin Configuration
     ADMIN_TELEGRAM_ID: '1538232799',
     ADMIN_USERNAME: 'OPPER101',
+    ADMIN_TELEGRAM: '7972272875',
+    ADMIN_USERNAME: 'SEEPB',
 
     // JSONBin.io Configuration
     JSONBIN_API_KEY: '$2a$10$qIofQ05vovEVKj99fILB3OtPttEzZylUmfXXKwdomNVuP/LhlYSBS',
