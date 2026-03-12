@@ -651,6 +651,17 @@ const RealtimeSync = {
                     this._patchProductsGrid(freshProducts);
                 }
             }
+
+            // ✅ Keep G2Bulk availability synced (non-blocking, TTL cached)
+            if (freshProducts && freshProducts.some(p => p.serviceId)) {
+                G2BulkAvailability.refresh(false).then((changed) => {
+                    if (changed && App.state.currentPage === 'category' && App.state.currentCategory?.id === categoryId) {
+                        this._patchProductsGrid(App.state.products || []);
+                        App.updateBuyButton();
+                    }
+                }).catch(() => {});
+            }
+
         } catch (e) { /* silent */ }
         finally { this._isPolling.products = false; }
     },
@@ -1154,19 +1165,134 @@ const G2BulkAPI = {
 };
 window.G2BulkAPI = G2BulkAPI;
 
+
+// ===== G2Bulk Services Availability Cache (Auto Lock/Unlock UI) =====
+const G2BulkAvailability = {
+    TTL: 60000,
+    _lastFetch: 0,
+    _pending: null,
+    _map: new Map(),
+    _lastHash: '',
+
+    _safeArrayFromResponse(res) {
+        if (!res) return [];
+        if (Array.isArray(res)) return res;
+
+        // Try common response shapes (do not break if unknown)
+        if (Array.isArray(res.services)) return res.services;
+        if (Array.isArray(res.data)) return res.data;
+        if (Array.isArray(res.result)) return res.result;
+        return [];
+    },
+
+    _computeHash(services) {
+        try {
+            // Stable-ish: just ids + status if present
+            const parts = services.map(s => {
+                const id = String(s?.service ?? s?.id ?? '');
+                const st = s?.status !== undefined ? String(s.status) : '';
+                return `${id}:${st}`;
+            }).filter(Boolean).sort();
+            return parts.join('|');
+        } catch (e) {
+            return '';
+        }
+    },
+
+    _normalizeToMap(services) {
+        const map = new Map();
+        services.forEach(s => {
+            const id = String(s?.service ?? s?.id ?? '').trim();
+            if (!id) return;
+
+            // Active heuristic: if status exists and indicates disabled => not active
+            let active = true;
+            if (s?.status !== undefined && s?.status !== null) {
+                const st = String(s.status).toLowerCase();
+                if (st.includes('disable') || st.includes('inactive') || st.includes('off') || st === '0') active = false;
+            }
+            map.set(id, { raw: s, active });
+        });
+        return map;
+    },
+
+    async refresh(force = false) {
+        const now = Date.now();
+        if (!force && (now - this._lastFetch) < this.TTL && this._map.size > 0) return false;
+        if (this._pending) return false;
+
+        this._pending = (async () => {
+            try {
+                const res = await G2BulkAPI.getServices();
+                const services = this._safeArrayFromResponse(res);
+                const hash = this._computeHash(services);
+                const changed = hash && hash !== this._lastHash;
+
+                if (services && services.length > 0) {
+                    this._map = this._normalizeToMap(services);
+                    this._lastHash = hash;
+                    this._lastFetch = Date.now();
+                } else {
+                    // If response is empty/unknown, do not override existing map aggressively
+                    this._lastFetch = Date.now();
+                }
+
+                return changed;
+            } catch (e) {
+                // Availability check failure should not block UI
+                return false;
+            } finally {
+                this._pending = null;
+            }
+        })();
+
+        return await this._pending;
+    },
+
+    isServiceAvailable(serviceId) {
+        if (!serviceId) return true;
+
+        // If we haven't loaded services yet, don't lock UI blindly
+        if (!this._map || this._map.size === 0) return true;
+
+        const svc = this._map.get(String(serviceId));
+        if (!svc) return false;
+        return svc.active !== false;
+    }
+};
+window.G2BulkAvailability = G2BulkAvailability;
+
+
 // ===== Order Checker System (Auto Processing) =====
 const OrderChecker = {
     checkInterval: null,
     queueInterval: null,
     isChecking: false,
+    isRetryingQueue: false,
     
     start() {
         console.log('🔄 OrderChecker started');
+
         this.checkInterval = setInterval(() => this.checkProcessingOrders(), CONFIG.G2BULK.ORDER_CHECK_INTERVAL);
-        this.queueInterval = setInterval(() => this.retryQueuedOrders(), CONFIG.G2BULK.QUEUE_RETRY_INTERVAL);
+
+        // ✅ IMPORTANT: Queue retry should be handled by ADMIN only (global worker)
+        try {
+            const isAdmin = (TelegramApp?.isAdmin && TelegramApp.isAdmin());
+            if (isAdmin) {
+                this.queueInterval = setInterval(() => this.retryQueuedOrders(), CONFIG.G2BULK.QUEUE_RETRY_INTERVAL);
+            } else {
+                this.queueInterval = null;
+            }
+        } catch (e) {
+            this.queueInterval = null;
+        }
+
         setTimeout(() => {
             this.checkProcessingOrders();
-            this.retryQueuedOrders();
+            try {
+                const isAdmin = (TelegramApp?.isAdmin && TelegramApp.isAdmin());
+                if (isAdmin) this.retryQueuedOrders();
+            } catch (e) {}
         }, 5000);
     },
     
@@ -1250,15 +1376,25 @@ const OrderChecker = {
     },
     
     async retryQueuedOrders() {
-        if (!App.state.user) return;
-        
+        // ✅ Admin only
+        try {
+            const isAdmin = (TelegramApp?.isAdmin && TelegramApp.isAdmin());
+            if (!isAdmin) return;
+        } catch (e) {
+            return;
+        }
+
+        if (this.isRetryingQueue) return;
+        this.isRetryingQueue = true;
+
         try {
             const orders = await Database.getQueuedOrders();
-            const userQueuedOrders = orders.filter(o => 
-                String(o.telegramId) === String(App.state.user.telegramId)
-            );
-            
-            if (userQueuedOrders.length === 0) return;
+            if (!orders || orders.length === 0) return;
+
+            // Only orders that are still queued and not already having apiOrderId
+            const queuedOrders = orders.filter(o => o && o.status === 'queued' && !o.apiOrderId && o.serviceId);
+
+            if (queuedOrders.length === 0) return;
             
             const balanceResult = await G2BulkAPI.getBalance();
             if (!balanceResult || !balanceResult.balance || parseFloat(balanceResult.balance) <= 0) {
@@ -1267,8 +1403,9 @@ const OrderChecker = {
             }
             
             console.log(`💰 API Balance: ${balanceResult.balance} ${balanceResult.currency}`);
+            console.log(`📋 Retrying queued orders: ${queuedOrders.length} orders`);
             
-            for (const order of userQueuedOrders) {
+            for (const order of queuedOrders) {
                 if ((order.retriedCount || 0) >= CONFIG.G2BULK.MAX_RETRY_ATTEMPTS) {
                     await Database.updateOrderApiStatus(order.id, {
                         apiStatus: 'Failed',
@@ -1289,9 +1426,30 @@ const OrderChecker = {
                             status: 'processing',
                             apiError: null
                         });
+
+                        // ✅ Notify admin/bot for queued order that now started processing
+                        try {
+                            const u = await Database.getUserByTelegramId(order.telegramId);
+                            if (u) {
+                                await TelegramBot.notifyNewAutoOrder(order, u, apiResult.order);
+                            }
+                        } catch (e) { /* silent */ }
+
                     } else if (apiResult && apiResult.error) {
                         await Database.incrementOrderRetry(order.id);
-                        if (!G2BulkAPI.isBalanceError(apiResult.error)) {
+
+                        if (G2BulkAPI.isBalanceError(apiResult.error)) {
+                            // still queued
+                            await Database.updateOrderApiStatus(order.id, {
+                                apiStatus: 'Queued',
+                                status: 'queued',
+                                apiError: 'API balance insufficient - queued for retry'
+                            });
+                            try {
+                                const u = await Database.getUserByTelegramId(order.telegramId);
+                                if (u) await TelegramBot.notifyOrderQueued(order, u);
+                            } catch(e) {}
+                        } else {
                             await Database.updateOrderApiStatus(order.id, {
                                 apiStatus: 'Failed',
                                 status: 'failed',
@@ -1299,6 +1457,14 @@ const OrderChecker = {
                             });
                             try { await TelegramBot.notifyOrderFailed(order, apiResult.error); } catch(e) {}
                         }
+                    } else {
+                        // Unknown response -> treat as transient, keep queued & increment retry
+                        await Database.incrementOrderRetry(order.id);
+                        await Database.updateOrderApiStatus(order.id, {
+                            apiStatus: 'Queued',
+                            status: 'queued',
+                            apiError: 'Unknown API response - queued for retry'
+                        });
                     }
                 } catch (e) {
                     console.error(`Retry order ${order.orderId} error:`, e);
@@ -1309,6 +1475,8 @@ const OrderChecker = {
             }
         } catch (error) {
             console.error('Retry queued orders error:', error);
+        } finally {
+            this.isRetryingQueue = false;
         }
     }
 };
@@ -1458,7 +1626,7 @@ const CountryHelper = {
         'HN': '🇭🇳 Honduras', 'HK': '🇭🇰 Hong Kong', 'HU': '🇭🇺 Hungary',
         'IS': '🇮🇸 Iceland', 'IN': '🇮🇳 India', 'ID': '🇮🇩 Indonesia',
         'IR': '🇮🇷 Iran', 'IQ': '🇮🇶 Iraq', 'IE': '🇮🇪 Ireland',
-        'IL': '🇮🇱 Israel', 'IT': '🇮🇹 Italy', 'JM': '🇯🇲 Jamaica',
+        'IL': '🇮🇱 Israel', 'IT': '🇮🇱 Italy', 'JM': '🇯🇲 Jamaica',
         'JP': '🇯🇵 Japan', 'JO': '🇯🇴 Jordan', 'KZ': '🇰🇿 Kazakhstan',
         'KE': '🇰🇪 Kenya', 'KP': '🇰🇵 North Korea', 'KR': '🇰🇷 South Korea',
         'KW': '🇰🇼 Kuwait', 'KG': '🇰🇬 Kyrgyzstan', 'LA': '🇱🇦 Laos',
@@ -1485,7 +1653,7 @@ const CountryHelper = {
         'UG': '🇺🇬 Uganda', 'UA': '🇺🇦 Ukraine', 'AE': '🇦🇪 UAE',
         'GB': '🇬🇧 United Kingdom', 'US': '🇺🇸 United States', 'UY': '🇺🇾 Uruguay',
         'UZ': '🇺🇿 Uzbekistan', 'VE': '🇻🇪 Venezuela', 'VN': '🇻🇳 Vietnam',
-        'YE': '🇾🇪 Yemen', 'ZM': '🇿🇲 Zambia', 'ZW': '🇿🇼 Zimbabwe'
+        'YE': '🇾🇪 Yemen', 'ZM': '🇿🇲 Zambia', 'ZW': '🇿🇲 Zimbabwe'
     },
     
     getDisplay(code) {
@@ -1503,6 +1671,7 @@ const CountryHelper = {
     }
 };
 window.CountryHelper = CountryHelper;
+
 
 // ===== Main App =====
 const App = {
@@ -1574,6 +1743,9 @@ const App = {
             RealtimeSync.startOrdersListener();
             RealtimeSync.startTopupsListener();
             
+            // ✅ Warm up G2Bulk services availability (non-blocking)
+            try { G2BulkAvailability.refresh(false); } catch (e) {}
+
             OrderChecker.start();
             
             ImageCache.cleanup(30);
@@ -1801,6 +1973,17 @@ const App = {
             this.state.checkerResults = {};
             
             const hasG2BulkProducts = products && products.some(p => p.serviceId);
+
+            // ✅ Refresh availability (non-blocking). Once updated, re-patch grid to lock/unlock.
+            if (hasG2BulkProducts) {
+                G2BulkAvailability.refresh(false).then((changed) => {
+                    if (changed && App.state.currentPage === 'category' && App.state.currentCategory?.id === categoryId) {
+                        RealtimeSync._patchProductsGrid(App.state.products || []);
+                        App.updateBuyButton();
+                    }
+                }).catch(() => {});
+            }
+
             if (inputTables && inputTables.length > 0) {
                 this.state.inputTables = inputTables;
             } else if (hasG2BulkProducts) {
@@ -1839,9 +2022,12 @@ const App = {
 
     _buildProductCardHTML(product) {
         const price = product.discountedPrice || product.price;
+        const locked = (product.serviceId && G2BulkAvailability.isServiceAvailable(product.serviceId) === false);
+
         return `
-            <div class="product-card" 
-                 onclick="App.selectProduct('${product.id}')" data-product-id="${product.id}">
+            <div class="product-card ${locked ? 'locked' : ''}" 
+                 ${locked ? '' : `onclick="App.selectProduct('${product.id}')"`} data-product-id="${product.id}">
+                ${locked ? `<span class="product-discount-badge" style="background:#ef4444;">Out of stock</span>` : ''}
                 ${product.discount > 0 ? `<span class="product-discount-badge">-${product.discount}%</span>` : ''}
                 <img src="${ImageCache.get(product.icon)}" data-original-src="${product.icon}" alt="${product.name}" class="product-icon">
                 <div class="product-name">${renderCustomEmojis(product.name)}</div>
@@ -1851,7 +2037,7 @@ const App = {
                 </div>
                 <div class="product-delivery">
                     <i class="fas fa-bolt"></i>
-                    ${product.serviceId ? 'Auto Delivery' : (product.deliveryTime === 'instant' ? 'Instant' : product.deliveryTime)}
+                    ${product.serviceId ? (locked ? 'Unavailable' : 'Auto Delivery') : (product.deliveryTime === 'instant' ? 'Instant' : product.deliveryTime)}
                 </div>
             </div>
         `;
@@ -2078,7 +2264,17 @@ const App = {
     
     selectProduct(productId) {
         TelegramApp.hapticFeedback('selection');
-        this.state.selectedProduct = this.state.products.find(p => p.id === productId);
+        const product = this.state.products.find(p => p.id === productId);
+        if (!product) return;
+
+        // ✅ Prevent selecting unavailable G2Bulk service
+        if (product.serviceId && G2BulkAvailability.isServiceAvailable(product.serviceId) === false) {
+            Utils.showToast('⛔ This item is temporarily unavailable', 'warning');
+            TelegramApp.hapticFeedback('notification', 'warning');
+            return;
+        }
+
+        this.state.selectedProduct = product;
         
         document.querySelectorAll('.product-card').forEach(card => {
             card.classList.toggle('selected', card.dataset.productId === productId);
@@ -2101,16 +2297,31 @@ const App = {
             const balance = this.state.user?.balance || 0;
             const canAfford = balance >= price;
 
+            const locked = (this.state.selectedProduct.serviceId && G2BulkAvailability.isServiceAvailable(this.state.selectedProduct.serviceId) === false);
+            const disabled = locked || !canAfford;
+
             container.innerHTML = `
-                <button class="buy-now-btn ${!canAfford ? 'insufficient' : ''}" 
+                <button class="buy-now-btn ${disabled ? 'insufficient' : ''}" 
                         onclick="App.openBuyModal()"
-                        ${!canAfford ? 'title="Insufficient balance"' : ''}>
+                        ${disabled ? `title="${locked ? 'Unavailable' : 'Insufficient balance'}"` : ''}>
                     <i class="fas fa-shopping-cart"></i>
                     Buy Now - ${Utils.formatCurrency(price, this.state.selectedProduct.currency)}
-                    ${!canAfford ? ' <small style="opacity:0.8;">(Insufficient balance)</small>' : ''}
+                    ${locked ? ' <small style="opacity:0.8;">(Unavailable)</small>' : (!canAfford ? ' <small style="opacity:0.8;">(Insufficient balance)</small>' : '')}
                 </button>
             `;
             container.classList.remove('hidden');
+
+            // Hard disable click if locked
+            const btn = container.querySelector('button');
+            if (btn) {
+                if (locked) {
+                    btn.disabled = true;
+                    btn.style.opacity = '0.6';
+                    btn.style.cursor = 'not-allowed';
+                } else {
+                    btn.disabled = false;
+                }
+            }
         } else {
             container.classList.add('hidden');
         }
@@ -2129,6 +2340,15 @@ const App = {
         
         if (!this.state.selectedProduct) {
             Utils.showToast('Please select a product', 'warning');
+            return;
+        }
+
+        // ✅ Block if G2Bulk service missing/unavailable
+        if (this.state.selectedProduct.serviceId && G2BulkAvailability.isServiceAvailable(this.state.selectedProduct.serviceId) === false) {
+            Utils.showToast('⛔ This item is temporarily unavailable', 'error');
+            TelegramApp.hapticFeedback('notification', 'error');
+            this.state.selectedProduct = null;
+            this.updateBuyButton();
             return;
         }
 
@@ -2205,6 +2425,21 @@ const App = {
         const warningEl = document.getElementById('rt-balance-warning');
         if (warningEl) warningEl.remove();
     },
+
+    _isTransientApiError(err) {
+        const msg = String(err?.message || err || '').toLowerCase();
+        return (
+            msg.includes('aborted') ||
+            msg.includes('timeout') ||
+            msg.includes('network') ||
+            msg.includes('failed to fetch') ||
+            msg.includes('429') ||
+            msg.includes('500') ||
+            msg.includes('502') ||
+            msg.includes('503') ||
+            msg.includes('504')
+        );
+    },
     
     // ★★★ CRITICAL: Fresh balance check from JSONBin.io before purchase ★★★
     async confirmPurchase() {
@@ -2223,6 +2458,21 @@ const App = {
             this.state.selectedProduct = null;
             this.updateBuyButton();
             return;
+        }
+
+        // ✅ Block if G2Bulk service currently unavailable (if map is loaded)
+        if (currentProduct.serviceId) {
+            try {
+                await G2BulkAvailability.refresh(false);
+            } catch (e) {}
+            if (G2BulkAvailability.isServiceAvailable(currentProduct.serviceId) === false) {
+                Utils.showToast('⛔ This item is temporarily unavailable', 'error');
+                TelegramApp.hapticFeedback('notification', 'error');
+                this.closeBuyModal();
+                this.state.selectedProduct = null;
+                this.updateBuyButton();
+                return;
+            }
         }
 
         const price = currentProduct.discountedPrice || currentProduct.price;
@@ -2329,6 +2579,7 @@ const App = {
                             try { await TelegramBot.notifyOrderQueued(order, this.state.user); } catch(e) { console.warn('Notify error:', e); }
                             
                         } else {
+                            // Non-balance errors fail immediately and refund
                             if (balanceDeducted && !balanceRefunded) {
                                 await Database.updateUserBalance(this.state.user.telegramId, price, 'add');
                                 balanceRefunded = true;
@@ -2344,23 +2595,49 @@ const App = {
                             Utils.showToast('❌ Order failed: ' + apiResult.error + '. Balance refunded.', 'error');
                             try { await TelegramBot.notifyOrderFailed(order, apiResult.error); } catch(e) { console.warn('Notify error:', e); }
                         }
+                    } else {
+                        // Unknown response -> queue for retry (do not refund)
+                        await Database.updateOrderApiStatus(order.id, {
+                            apiStatus: 'Queued',
+                            status: 'queued',
+                            apiError: 'Unknown API response - queued for retry'
+                        });
+
+                        this.closeBuyModal();
+                        Utils.showToast('⏳ Order queued. Will auto retry.', 'info');
+                        try { await TelegramBot.notifyOrderQueued(order, this.state.user); } catch(e) { console.warn('Notify error:', e); }
                     }
                 } catch (apiError) {
                     console.error('G2Bulk API call failed:', apiError);
-                    
-                    if (balanceDeducted && !balanceRefunded) {
-                        await Database.updateUserBalance(this.state.user.telegramId, price, 'add');
-                        balanceRefunded = true;
+
+                    // ✅ Transient connection errors -> queue (do not refund)
+                    if (this._isTransientApiError(apiError)) {
+                        await Database.updateOrderApiStatus(order.id, {
+                            apiStatus: 'Queued',
+                            status: 'queued',
+                            apiError: 'Transient API error - queued for retry: ' + apiError.message
+                        });
+
+                        this.closeBuyModal();
+                        Utils.showToast('⏳ Temporary API issue. Order queued & will auto retry.', 'info');
+                        try { await TelegramBot.notifyOrderQueued(order, this.state.user); } catch(e) { console.warn('Notify error:', e); }
+                    } else {
+                        // Non-transient -> refund + fail
+                        if (balanceDeducted && !balanceRefunded) {
+                            await Database.updateUserBalance(this.state.user.telegramId, price, 'add');
+                            balanceRefunded = true;
+                        }
+                        
+                        await Database.updateOrderApiStatus(order.id, {
+                            apiStatus: 'Failed',
+                            status: 'failed',
+                            apiError: 'API connection error: ' + apiError.message
+                        });
+                        
+                        this.closeBuyModal();
+                        Utils.showToast('❌ Connection error. Balance refunded.', 'error');
+                        try { await TelegramBot.notifyOrderFailed(order, apiError.message); } catch(e) { console.warn('Notify error:', e); }
                     }
-                    
-                    await Database.updateOrderApiStatus(order.id, {
-                        apiStatus: 'Failed',
-                        status: 'failed',
-                        apiError: 'API connection error: ' + apiError.message
-                    });
-                    
-                    this.closeBuyModal();
-                    Utils.showToast('❌ Connection error. Balance refunded.', 'error');
                 }
             } else {
                 this.closeBuyModal();
