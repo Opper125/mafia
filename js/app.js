@@ -1225,6 +1225,56 @@ const G2BulkAPI = {
         return requirements;
     },
     
+    // ===== Check Player ID (Validate before purchase) =====
+    async checkPlayerId(gameCode, userId, serverId = null) {
+        try {
+            const publicApiUrl = 'https://api.g2bulk.com/v1/games/checkPlayerId';
+            
+            const payload = {
+                game: gameCode,
+                user_id: userId
+            };
+            
+            if (serverId && serverId.trim()) {
+                payload.server_id = serverId;
+            }
+            
+            console.log('[v0] Validating player ID:', payload);
+            
+            const response = await fetch(publicApiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            console.log('[v0] Player ID validation result:', result);
+            
+            if (result.valid === 'valid') {
+                return {
+                    valid: true,
+                    name: result.name,
+                    openid: result.openid
+                };
+            } else {
+                return {
+                    valid: false,
+                    error: 'Invalid player ID'
+                };
+            }
+        } catch (error) {
+            console.warn('[v0] Player ID validation error:', error);
+            return {
+                valid: false,
+                error: error.message
+            };
+        }
+    },
+    
     // ===== Build Link for G2Bulk API =====
     buildLink(gameId, serverId) {
         if (serverId && serverId.trim()) {
@@ -1408,7 +1458,7 @@ const OrderChecker = {
             }
             
             const apiStatus = result.status;
-            console.log(`📋 Order ${order.orderId} API status: ${apiStatus}`);
+            console.log(`�� Order ${order.orderId} API status: ${apiStatus}`);
             
             switch (apiStatus) {
                 case 'Completed':
@@ -2210,7 +2260,7 @@ const App = {
     
     async checkGameId(tableId) {
         const table = this.state.inputTables.find(t => t.id === tableId);
-        if (!table || !table.checkerEnabled || !table.checkerConfig) return;
+        if (!table || !table.checkerEnabled) return;
         
         const input = document.getElementById(`input-${tableId}`);
         const resultDiv = document.getElementById(`checker-result-${tableId}`);
@@ -2233,11 +2283,47 @@ const App = {
         resultDiv.className = 'checker-result show';
         
         try {
-            const result = await GameIdChecker.check(
-                table.checkerConfig, 
-                value, 
-                this.state.inputValues
-            );
+            let result = null;
+            
+            // If this is a G2Bulk service product, use G2Bulk API validation
+            if (this.state.selectedProduct?.serviceId && this.state.g2bulkGameCode) {
+                const serverId = this.state.inputValues['Server ID'] || this.state.inputValues['server_id'];
+                result = await G2BulkAPI.checkPlayerId(
+                    this.state.g2bulkGameCode,
+                    value,
+                    serverId
+                );
+                
+                // Transform G2Bulk response to our format
+                if (result.valid) {
+                    result = {
+                        valid: true,
+                        nickname: result.name || null,
+                        playerName: result.name || null,
+                        country: null,
+                        openid: result.openid || null,
+                        raw: result
+                    };
+                } else {
+                    result = {
+                        valid: false,
+                        nickname: null,
+                        playerName: null,
+                        country: null,
+                        error: result.error
+                    };
+                }
+            } else if (table.checkerConfig) {
+                // Use config-based checker for other APIs
+                result = await GameIdChecker.check(
+                    table.checkerConfig, 
+                    value, 
+                    this.state.inputValues
+                );
+            } else {
+                // No checker configured
+                return;
+            }
             
             if (result && result.valid) {
                 this.state.checkerResults[tableId] = result;
@@ -2354,11 +2440,52 @@ const App = {
 
         this.state.selectedProduct = product;
         
+        // Extract game code from category name for G2Bulk API validation
+        if (product.serviceId && this.state.currentCategory?.name) {
+            this.state.g2bulkGameCode = this.getG2BulkGameCode(this.state.currentCategory.name);
+        }
+        
         document.querySelectorAll('.product-card').forEach(card => {
             card.classList.toggle('selected', card.dataset.productId === productId);
         });
         
         this.updateBuyButton();
+    },
+    
+    // Map category names to G2Bulk game codes
+    getG2BulkGameCode(categoryName) {
+        const name = (categoryName || '').toLowerCase();
+        
+        const gameCodeMap = {
+            'pubg': 'pubgm',
+            'pubg mobile': 'pubgm',
+            'mobile legends': 'mlbb',
+            'ml': 'mlbb',
+            'freefire': 'ff',
+            'free fire': 'ff',
+            'lost ark': 'lostarkonline',
+            'lineage': 'l2',
+            'ragnarok': 'ragnarokm',
+            'honkai': 'honkaistarrail',
+            'genshin': 'genshinimpact',
+            'diablo': 'diabloimmortal',
+            'arena of valor': 'aov',
+            'call of duty': 'codm',
+            'codm': 'codm',
+            'garena': 'aov',
+            'mlbb voucher': 'mlbb',
+            'pubg voucher': 'pubgm'
+        };
+        
+        for (const [key, code] of Object.entries(gameCodeMap)) {
+            if (name.includes(key)) {
+                return code;
+            }
+        }
+        
+        // Default: use first word as game code
+        const firstWord = name.split(' ')[0];
+        return firstWord || 'unknown';
     },
     
     updateBuyButton() {
