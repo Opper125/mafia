@@ -19,7 +19,7 @@ const CONFIG = {
     BINS: {
         MAIN: '697f241743b1c97be95cfcd2',
         USERS: '697f2418ae596e708f08d3f4',
-        PRODUCTS: '697f241843b1c97be95cfcd5',
+        PRODUCTS: '69b85e50b7ec241ddc74462b',
         CATEGORIES: '697f2419ae596e708f08d3f6',
         ORDERS: '697f2419d0ea881f40986834',
         TOPUPS: '697f241aae596e708f08d3fa',
