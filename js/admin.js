@@ -1,4 +1,4 @@
-// ===== Admin Panel Application - G2Bulk Integrated + Enhanced Game ID Checker =====
+// ===== Admin Panel Application - G2Bulk Integrated + Enhanced Game ID Checker + Bulk Operations =====
 
 const AdminApp = {
     state: {
@@ -22,35 +22,37 @@ const AdminApp = {
         g2bulkServices: [],
         g2bulkServicesRaw: [],
         g2bulkBalance: null,
-        g2bulkCategories: []
+        g2bulkCategories: [],
+        // Bulk Import State
+        bulkImportSelectedServices: new Set(),
+        bulkImportFilteredServices: [],
+        bulkImportIconBase64: null,
+        // Bulk Price Update State
+        bulkPriceSelectedProducts: new Set(),
+        // Products page selection
+        selectedProductIds: new Set()
     },
     
     async init() {
-        console.log('Ã°Å¸Å¡â‚¬ Initializing Admin Panel...');
-        
+        console.log('🚀 Initializing Admin Panel...');
         try {
             if (!TelegramApp.isInTelegram()) {
                 this.showAccessDenied('This panel can only be accessed through Telegram');
                 return;
             }
-            
             await TelegramApp.init();
-            
             if (!TelegramApp.isAdmin()) {
                 this.showAccessDenied('You don\'t have permission to access this panel');
                 return;
             }
-            
             Utils.showLoading('Loading admin panel...');
             await this.loadAdminData();
             this.showDashboard();
             TelegramApp.ready();
             Utils.hideLoading();
-            
             this.refreshApiBalance();
-            
         } catch (error) {
-            console.error('Ã¢ÂÅ’ Admin init error:', error);
+            console.error('❌ Admin init error:', error);
             Utils.hideLoading();
             Utils.showToast('Failed to initialize: ' + error.message, 'error');
         }
@@ -86,7 +88,6 @@ const AdminApp = {
                 Database.getBannedUsers(),
                 Database.getStats()
             ]);
-            
             this.state.settings = results[0].status === 'fulfilled' ? results[0].value : {};
             this.state.users = results[1].status === 'fulfilled' ? results[1].value : [];
             this.state.orders = results[2].status === 'fulfilled' ? results[2].value : [];
@@ -99,7 +100,6 @@ const AdminApp = {
             this.state.bannedUsers = results[9].status === 'fulfilled' ? results[9].value : [];
             this.state.customEmojis = this.state.settings?.customEmojis || [];
             this.state.stats = results[10].status === 'fulfilled' ? results[10].value : {};
-            
             this.updateSidebarCounts();
         } catch (error) {
             console.error('Load admin data error:', error);
@@ -111,12 +111,9 @@ const AdminApp = {
         const usersCount = document.getElementById('users-count');
         const pendingOrders = document.getElementById('pending-orders');
         const pendingTopups = document.getElementById('pending-topups');
-        
         if (usersCount) usersCount.textContent = this.state.users.length;
         if (pendingOrders) {
-            const count = this.state.orders.filter(o => 
-                o.status === 'pending' || o.status === 'processing' || o.status === 'queued'
-            ).length;
+            const count = this.state.orders.filter(o => o.status === 'pending' || o.status === 'processing' || o.status === 'queued').length;
             pendingOrders.textContent = count;
         }
         if (pendingTopups) pendingTopups.textContent = this.state.topups.filter(t => t.status === 'pending').length;
@@ -179,12 +176,10 @@ const AdminApp = {
         document.getElementById('stat-orders').textContent = this.state.stats.totalOrders || this.state.orders.length || 0;
         document.getElementById('stat-revenue').textContent = this.state.stats.totalRevenue || 0;
         document.getElementById('stat-pending').textContent = this.state.stats.pendingOrders || this.state.orders.filter(o => o.status === 'pending').length || 0;
-        
         const processingEl = document.getElementById('stat-processing');
         const queuedEl = document.getElementById('stat-queued');
         if (processingEl) processingEl.textContent = this.state.stats.processingOrders || this.state.orders.filter(o => o.status === 'processing').length || 0;
         if (queuedEl) queuedEl.textContent = this.state.stats.queuedOrders || this.state.orders.filter(o => o.status === 'queued').length || 0;
-        
         this.renderRecentOrders();
         this.renderRecentTopups();
     },
@@ -194,9 +189,9 @@ const AdminApp = {
             const result = await G2BulkAPI.getBalance();
             if (result && result.balance) {
                 this.state.g2bulkBalance = result;
+                const balanceText = `$${parseFloat(result.balance).toFixed(4)} ${result.currency || 'USD'}`;
                 const displayEl = document.getElementById('api-balance-value');
                 const g2bulkDisplayEl = document.getElementById('g2bulk-balance-display');
-                const balanceText = `$${parseFloat(result.balance).toFixed(4)} ${result.currency || 'USD'}`;
                 if (displayEl) displayEl.textContent = balanceText;
                 if (g2bulkDisplayEl) g2bulkDisplayEl.textContent = balanceText;
             }
@@ -268,7 +263,7 @@ const AdminApp = {
         const user = this.state.users.find(u => u.telegramId === telegramId);
         if (!user) return;
         const content = document.getElementById('user-details-content');
-        content.innerHTML = `<div class="user-details-header"><img src="${user.photoUrl || this.getAvatar(user.firstName)}" alt="${user.firstName}"><div class="user-details-info"><h3>${user.firstName} ${user.lastName || ''}</h3><p>@${user.username || 'N/A'} Ã¢â‚¬Â¢ ID: ${user.telegramId}</p>${user.isPremium ? '<span class="badge premium"><i class="fas fa-star"></i> Telegram Premium</span>' : ''}</div></div>
+        content.innerHTML = `<div class="user-details-header"><img src="${user.photoUrl || this.getAvatar(user.firstName)}" alt="${user.firstName}"><div class="user-details-info"><h3>${user.firstName} ${user.lastName || ''}</h3><p>@${user.username || 'N/A'} • ID: ${user.telegramId}</p>${user.isPremium ? '<span class="badge premium"><i class="fas fa-star"></i> Telegram Premium</span>' : ''}</div></div>
         <div class="user-stats-row"><div class="user-stat-box"><span class="stat-value">${Utils.formatCurrency(user.balance, '')}</span><span class="stat-label">Balance</span></div><div class="user-stat-box"><span class="stat-value">${user.totalOrders || 0}</span><span class="stat-label">Orders</span></div><div class="user-stat-box"><span class="stat-value">${Utils.formatCurrency(user.totalSpent || 0, '')}</span><span class="stat-label">Spent</span></div></div>
         <div class="user-info-grid"><div class="info-item"><span>Joined:</span> <strong>${Utils.formatDate(user.joinedAt, 'long')}</strong></div><div class="info-item"><span>Last Active:</span> <strong>${Utils.formatDate(user.lastActive, 'long')}</strong></div></div>
         <div class="user-actions-row"><button class="btn btn-primary" onclick="AdminApp.editUserBalance('${user.telegramId}')"><i class="fas fa-wallet"></i> Edit Balance</button><button class="btn btn-danger" onclick="AdminApp.banUserPrompt('${user.telegramId}')"><i class="fas fa-ban"></i> Ban User</button></div>`;
@@ -315,18 +310,13 @@ const AdminApp = {
     renderOrders() {
         const container = document.getElementById('admin-orders-list');
         if (!container) return;
-        
         let filtered = [...this.state.orders];
-        if (this.state.ordersFilter !== 'all') {
-            filtered = filtered.filter(o => o.status === this.state.ordersFilter);
-        }
+        if (this.state.ordersFilter !== 'all') filtered = filtered.filter(o => o.status === this.state.ordersFilter);
         filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-        
         if (filtered.length === 0) {
             container.innerHTML = '<div class="empty-state"><i class="fas fa-shopping-cart"></i><p>No orders found</p></div>';
             return;
         }
-        
         container.innerHTML = filtered.map(order => {
             const user = this.state.users.find(u => u.telegramId === order.telegramId);
             return `<div class="order-card">
@@ -381,8 +371,7 @@ const AdminApp = {
         try {
             const order = await Database.updateOrderStatus(orderId, 'approved', CONFIG.ADMIN_TELEGRAM_ID);
             await TelegramBot.notifyOrderStatus(order, 'approved');
-            await this.loadAdminData();
-            this.renderOrders();
+            await this.loadAdminData(); this.renderOrders();
             Utils.showToast('Order approved!', 'success');
         } catch (error) { Utils.showToast('Failed to approve', 'error'); }
         finally { Utils.hideLoading(); }
@@ -394,8 +383,7 @@ const AdminApp = {
         try {
             const order = await Database.updateOrderStatus(orderId, 'rejected', CONFIG.ADMIN_TELEGRAM_ID);
             await TelegramBot.notifyOrderStatus(order, 'rejected');
-            await this.loadAdminData();
-            this.renderOrders();
+            await this.loadAdminData(); this.renderOrders();
             Utils.showToast('Order rejected & refunded', 'success');
         } catch (error) { Utils.showToast('Failed to reject', 'error'); }
         finally { Utils.hideLoading(); }
@@ -404,26 +392,17 @@ const AdminApp = {
     async checkOrderApiStatus(orderId) {
         const order = this.state.orders.find(o => o.id === orderId);
         if (!order || !order.apiOrderId) return;
-        
         Utils.showLoading('Checking API status...');
         try {
             const result = await G2BulkAPI.checkStatus(order.apiOrderId);
             if (result && !result.error) {
                 const apiStatus = result.status;
                 let newStatus = order.status;
-                
                 if (apiStatus === 'Completed') newStatus = 'completed';
                 else if (apiStatus === 'Canceled' || apiStatus === 'Refunded') newStatus = 'failed';
                 else if (apiStatus === 'Partial') newStatus = 'partial';
-                
-                await Database.updateOrderApiStatus(order.id, {
-                    apiStatus: apiStatus,
-                    status: newStatus,
-                    apiCharge: result.charge || null
-                });
-                
-                await this.loadAdminData();
-                this.renderOrders();
+                await Database.updateOrderApiStatus(order.id, { apiStatus, status: newStatus, apiCharge: result.charge || null });
+                await this.loadAdminData(); this.renderOrders();
                 Utils.showToast(`API Status: ${apiStatus}`, 'success');
             } else {
                 Utils.showToast('API Error: ' + (result?.error || 'Unknown'), 'error');
@@ -435,41 +414,26 @@ const AdminApp = {
     async retryQueuedOrder(orderId) {
         const order = this.state.orders.find(o => o.id === orderId);
         if (!order) return;
-        
         Utils.showLoading('Retrying order...');
         try {
             const apiResult = await G2BulkAPI.placeOrder(order.serviceId, order.link, 1);
-            
             if (apiResult && apiResult.order) {
-                await Database.updateOrderApiStatus(order.id, {
-                    apiOrderId: apiResult.order,
-                    apiStatus: 'Processing',
-                    status: 'processing',
-                    apiError: null
-                });
-                Utils.showToast('Ã¢Å“â€¦ Order is now processing!', 'success');
+                await Database.updateOrderApiStatus(order.id, { apiOrderId: apiResult.order, apiStatus: 'Processing', status: 'processing', apiError: null });
+                Utils.showToast('✅ Order is now processing!', 'success');
             } else {
-                Utils.showToast('Ã¢ÂÅ’ Retry failed: ' + (apiResult?.error || 'Unknown'), 'error');
+                Utils.showToast('❌ Retry failed: ' + (apiResult?.error || 'Unknown'), 'error');
             }
-            
-            await this.loadAdminData();
-            this.renderOrders();
+            await this.loadAdminData(); this.renderOrders();
         } catch (error) { Utils.showToast('Failed to retry', 'error'); }
         finally { Utils.hideLoading(); }
     },
     
     async cancelQueuedOrder(orderId) {
         if (!confirm('Cancel this order and refund the user?')) return;
-        
         Utils.showLoading('Canceling...');
         try {
-            await Database.updateOrderApiStatus(orderId, {
-                apiStatus: 'Canceled',
-                status: 'failed',
-                apiError: 'Canceled by admin'
-            });
-            await this.loadAdminData();
-            this.renderOrders();
+            await Database.updateOrderApiStatus(orderId, { apiStatus: 'Canceled', status: 'failed', apiError: 'Canceled by admin' });
+            await this.loadAdminData(); this.renderOrders();
             Utils.showToast('Order canceled & refunded', 'success');
         } catch (error) { Utils.showToast('Failed to cancel', 'error'); }
         finally { Utils.hideLoading(); }
@@ -582,7 +546,7 @@ const AdminApp = {
         finally { Utils.hideLoading(); }
     },
     
-    // ===== PRODUCTS =====
+    // ===== PRODUCTS (UPDATED - with select/bulk delete) =====
     renderProducts() {
         const container = document.getElementById('admin-products-list');
         const filterSelect = document.getElementById('filter-category');
@@ -597,17 +561,38 @@ const AdminApp = {
         let filtered = [...this.state.products];
         if (filterSelect && filterSelect.value !== 'all') filtered = filtered.filter(p => p.categoryId === filterSelect.value);
         
+        // Show/hide bulk actions bar
+        const bulkBar = document.getElementById('bulk-actions-bar');
+        if (bulkBar) {
+            if (filtered.length > 0) {
+                bulkBar.classList.remove('hidden');
+            } else {
+                bulkBar.classList.add('hidden');
+            }
+        }
+        
+        // Update select all checkbox
+        const selectAllCb = document.getElementById('select-all-products');
+        if (selectAllCb) {
+            selectAllCb.checked = filtered.length > 0 && filtered.every(p => this.state.selectedProductIds.has(p.id));
+        }
+        this.updateSelectedProductsCount();
+        
         if (filtered.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fas fa-box"></i><p>No products yet</p></div>'; return; }
         
         container.innerHTML = filtered.map(product => {
             const cat = this.state.categories.find(c => c.id === product.categoryId);
-            return `<div class="product-card">
+            const isSelected = this.state.selectedProductIds.has(product.id);
+            return `<div class="product-card ${isSelected ? 'selected' : ''}">
+                <div class="product-select-checkbox">
+                    <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="AdminApp.toggleProductSelect('${product.id}')">
+                </div>
                 <div class="product-icon"><img src="${product.icon}" alt="${product.name}">${product.discount > 0 ? `<span class="discount-tag">-${product.discount}%</span>` : ''}</div>
                 <div class="product-info">
                     <h4>${product.name}</h4>
                     <p>${cat?.name || 'Unknown'}</p>
                     <div class="product-price">${product.discount > 0 ? `<span class="original">${Utils.formatCurrency(product.price, product.currency)}</span>` : ''}<span class="current">${Utils.formatCurrency(product.discountedPrice || product.price, product.currency)}</span></div>
-                    ${product.serviceId ? `<p class="product-api-info"><i class="fas fa-bolt"></i> Service #${product.serviceId} ${product.g2bulkRate ? `Ã¢â‚¬Â¢ $${product.g2bulkRate}/unit` : ''}</p>` : '<p class="product-manual"><i class="fas fa-hand-paper"></i> Manual</p>'}
+                    ${product.serviceId ? `<p class="product-api-info"><i class="fas fa-bolt"></i> Service #${product.serviceId} ${product.g2bulkRate ? `• $${product.g2bulkRate}/unit` : ''}</p>` : '<p class="product-manual"><i class="fas fa-hand-paper"></i> Manual</p>'}
                     <p class="product-delivery"><i class="fas fa-bolt"></i> ${product.serviceId ? 'Auto Delivery' : (product.deliveryTime === 'instant' ? 'Instant' : product.deliveryTime)}</p>
                 </div>
                 <div class="product-actions">
@@ -616,6 +601,56 @@ const AdminApp = {
                 </div>
             </div>`;
         }).join('');
+    },
+    
+    toggleProductSelect(productId) {
+        if (this.state.selectedProductIds.has(productId)) {
+            this.state.selectedProductIds.delete(productId);
+        } else {
+            this.state.selectedProductIds.add(productId);
+        }
+        this.renderProducts();
+    },
+    
+    toggleSelectAllProducts() {
+        const filterSelect = document.getElementById('filter-category');
+        let filtered = [...this.state.products];
+        if (filterSelect && filterSelect.value !== 'all') filtered = filtered.filter(p => p.categoryId === filterSelect.value);
+        
+        const selectAllCb = document.getElementById('select-all-products');
+        if (selectAllCb && selectAllCb.checked) {
+            filtered.forEach(p => this.state.selectedProductIds.add(p.id));
+        } else {
+            filtered.forEach(p => this.state.selectedProductIds.delete(p.id));
+        }
+        this.renderProducts();
+    },
+    
+    updateSelectedProductsCount() {
+        const countEl = document.getElementById('selected-products-count');
+        if (countEl) countEl.textContent = `${this.state.selectedProductIds.size} selected`;
+    },
+    
+    async bulkDeleteProducts() {
+        const count = this.state.selectedProductIds.size;
+        if (count === 0) { Utils.showToast('No products selected', 'warning'); return; }
+        if (!confirm(`Delete ${count} selected product(s)? This cannot be undone.`)) return;
+        
+        Utils.showLoading(`Deleting ${count} products...`);
+        try {
+            const idsToDelete = [...this.state.selectedProductIds];
+            for (const id of idsToDelete) {
+                await Database.deleteProduct(id);
+            }
+            this.state.selectedProductIds.clear();
+            await this.loadAdminData();
+            this.renderProducts();
+            Utils.showToast(`${count} products deleted!`, 'success');
+        } catch (error) {
+            Utils.showToast('Failed to delete some products: ' + error.message, 'error');
+        } finally {
+            Utils.hideLoading();
+        }
     },
     
     showAddProduct() {
@@ -662,35 +697,22 @@ const AdminApp = {
     async lookupServiceId() {
         const serviceId = document.getElementById('product-service-id').value;
         if (!serviceId) { Utils.showToast('Enter a Service ID first', 'warning'); return; }
-        
         const resultDiv = document.getElementById('service-lookup-result');
         resultDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Looking up...';
         resultDiv.classList.remove('hidden');
-        
         try {
             if (this.state.g2bulkServicesRaw.length === 0) {
                 const servicesResult = await G2BulkAPI.getServices();
                 this.state.g2bulkServicesRaw = servicesResult || [];
             }
-            
             const service = this.state.g2bulkServicesRaw.find(s => String(s.service) === String(serviceId));
-            
             if (service) {
-                resultDiv.innerHTML = `<div class="service-found">
-                    <i class="fas fa-check-circle"></i>
-                    <div><strong>${service.name}</strong><br>
-                    Rate: $${service.rate} | Min: ${service.min} | Max: ${service.max}<br>
-                    Category: ${service.category}</div>
-                </div>`;
+                resultDiv.innerHTML = `<div class="service-found"><i class="fas fa-check-circle"></i><div><strong>${service.name}</strong><br>Rate: $${service.rate} | Min: ${service.min} | Max: ${service.max}<br>Category: ${service.category}</div></div>`;
                 resultDiv.className = 'service-lookup-result valid';
-                
                 document.getElementById('product-g2bulk-rate').value = service.rate;
                 document.getElementById('product-g2bulk-min').value = service.min;
                 document.getElementById('product-g2bulk-max').value = service.max;
-                
-                if (!document.getElementById('product-name').value) {
-                    document.getElementById('product-name').value = service.name;
-                }
+                if (!document.getElementById('product-name').value) document.getElementById('product-name').value = service.name;
             } else {
                 resultDiv.innerHTML = '<i class="fas fa-times-circle"></i> Service not found';
                 resultDiv.className = 'service-lookup-result invalid';
@@ -703,7 +725,6 @@ const AdminApp = {
     
     async openG2BulkServiceBrowser() {
         document.getElementById('g2bulk-browser-modal').classList.remove('hidden');
-        
         if (this.state.g2bulkServicesRaw.length === 0) {
             document.getElementById('g2bulk-browser-list').innerHTML = '<p>Loading services...</p>';
             try {
@@ -714,7 +735,6 @@ const AdminApp = {
                 return;
             }
         }
-        
         this.renderBrowserServices(this.state.g2bulkServicesRaw.slice(0, 50));
     },
     
@@ -734,10 +754,8 @@ const AdminApp = {
     
     filterBrowserServices() {
         const query = document.getElementById('g2bulk-browser-search').value.toLowerCase();
-        const filtered = this.state.g2bulkServicesRaw.filter(s => 
-            s.name.toLowerCase().includes(query) || 
-            String(s.service).includes(query) ||
-            (s.category && s.category.toLowerCase().includes(query))
+        const filtered = this.state.g2bulkServicesRaw.filter(s =>
+            s.name.toLowerCase().includes(query) || String(s.service).includes(query) || (s.category && s.category.toLowerCase().includes(query))
         );
         this.renderBrowserServices(filtered);
     },
@@ -745,15 +763,11 @@ const AdminApp = {
     selectBrowserService(serviceId) {
         const service = this.state.g2bulkServicesRaw.find(s => s.service === serviceId);
         if (!service) return;
-        
         document.getElementById('product-service-id').value = service.service;
         document.getElementById('product-g2bulk-rate').value = service.rate;
         document.getElementById('product-g2bulk-min').value = service.min;
         document.getElementById('product-g2bulk-max').value = service.max;
-        if (!document.getElementById('product-name').value) {
-            document.getElementById('product-name').value = service.name;
-        }
-        
+        if (!document.getElementById('product-name').value) document.getElementById('product-name').value = service.name;
         this.closeG2BulkBrowser();
         Utils.showToast(`Selected: #${service.service} - ${service.name}`, 'success');
     },
@@ -770,9 +784,7 @@ const AdminApp = {
         const g2bulkMin = document.getElementById('product-g2bulk-min').value;
         const g2bulkMax = document.getElementById('product-g2bulk-max').value;
         const iconInput = document.getElementById('product-icon');
-        
         if (!categoryId || !name || isNaN(price)) { Utils.showToast('Please fill all required fields', 'warning'); return; }
-        
         Utils.showLoading('Saving...');
         try {
             let icon = this.state.editingItem?.icon || '';
@@ -785,13 +797,11 @@ const AdminApp = {
                 icon = result.data.url;
             }
             if (!icon && !this.state.editingItem) { Utils.showToast('Please upload icon', 'warning'); Utils.hideLoading(); return; }
-            
             let g2bulkServiceName = '';
             if (serviceId && this.state.g2bulkServicesRaw.length > 0) {
                 const svc = this.state.g2bulkServicesRaw.find(s => String(s.service) === String(serviceId));
                 if (svc) g2bulkServiceName = svc.name;
             }
-            
             const data = {
                 categoryId, name, price, currency, discount, deliveryTime, icon,
                 serviceId: serviceId ? parseInt(serviceId) : null,
@@ -800,10 +810,8 @@ const AdminApp = {
                 g2bulkMax: g2bulkMax ? parseInt(g2bulkMax) : null,
                 g2bulkServiceName: g2bulkServiceName
             };
-            
             if (this.state.editingItem) { await Database.updateProduct(this.state.editingItem.id, data); Utils.showToast('Product updated!', 'success'); }
             else { await Database.createProduct(data); Utils.showToast('Product created!', 'success'); }
-            
             await this.loadAdminData(); this.renderProducts(); this.closeAddProduct();
         } catch (error) { Utils.showToast('Failed to save: ' + error.message, 'error'); }
         finally { Utils.hideLoading(); }
@@ -815,6 +823,483 @@ const AdminApp = {
         try { await Database.deleteProduct(productId); await this.loadAdminData(); this.renderProducts(); Utils.showToast('Product deleted!', 'success'); }
         catch (error) { Utils.showToast('Failed to delete', 'error'); }
         finally { Utils.hideLoading(); }
+    },
+    
+    // ===== BULK IMPORT FROM G2BULK =====
+    
+    showBulkImportModal() {
+        this.state.bulkImportSelectedServices = new Set();
+        this.state.bulkImportFilteredServices = [];
+        this.state.bulkImportIconBase64 = null;
+        
+        // Populate category select
+        const catSelect = document.getElementById('bulk-import-category');
+        catSelect.innerHTML = '<option value="">-- Select Category --</option>' + this.state.categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+        
+        // Populate g2bulk category filter
+        const g2catSelect = document.getElementById('bulk-import-g2bulk-category');
+        if (this.state.g2bulkCategories.length > 0) {
+            g2catSelect.innerHTML = '<option value="all">All G2Bulk Categories</option>' + this.state.g2bulkCategories.map(c => `<option value="${c}">${c}</option>`).join('');
+        }
+        
+        document.getElementById('bulk-import-search').value = '';
+        document.getElementById('bulk-import-select-all').checked = false;
+        document.getElementById('bulk-import-selected-count').textContent = '0 selected';
+        document.getElementById('bulk-import-rate').value = '4150';
+        document.getElementById('bulk-import-icon').value = '';
+        document.getElementById('bulk-import-icon-preview').innerHTML = '';
+        document.getElementById('bulk-import-icon-preview').classList.add('hidden');
+        document.getElementById('bulk-import-services-list').innerHTML = '<div class="empty-state"><i class="fas fa-cloud-download-alt"></i><p>Click "Load Services" or search to find G2Bulk products</p></div>';
+        document.getElementById('bulk-import-preview').innerHTML = '<div class="empty-state small"><p>Select products above to see price preview</p></div>';
+        document.getElementById('bulk-import-save-btn').disabled = true;
+        document.getElementById('bulk-import-save-count').textContent = '0';
+        
+        document.getElementById('bulk-import-modal').classList.remove('hidden');
+    },
+    
+    closeBulkImportModal() {
+        document.getElementById('bulk-import-modal').classList.add('hidden');
+    },
+    
+    onBulkImportCategoryChange() {
+        // Just track the selected category
+    },
+    
+    async loadBulkImportServices() {
+        if (this.state.g2bulkServicesRaw.length === 0) {
+            Utils.showLoading('Loading G2Bulk services...');
+            try {
+                const result = await G2BulkAPI.getServices();
+                this.state.g2bulkServicesRaw = result || [];
+                const cats = [...new Set(this.state.g2bulkServicesRaw.map(s => s.category).filter(Boolean))];
+                this.state.g2bulkCategories = cats.sort();
+                const g2catSelect = document.getElementById('bulk-import-g2bulk-category');
+                g2catSelect.innerHTML = '<option value="all">All G2Bulk Categories</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+            } catch (e) {
+                Utils.showToast('Failed to load services', 'error');
+                Utils.hideLoading();
+                return;
+            }
+            Utils.hideLoading();
+        }
+        this.filterBulkImportServices();
+    },
+    
+    filterBulkImportServices() {
+        const query = (document.getElementById('bulk-import-search')?.value || '').toLowerCase();
+        const catFilter = document.getElementById('bulk-import-g2bulk-category')?.value || 'all';
+        
+        let filtered = [...this.state.g2bulkServicesRaw];
+        if (catFilter !== 'all') filtered = filtered.filter(s => s.category === catFilter);
+        if (query) filtered = filtered.filter(s => s.name.toLowerCase().includes(query) || String(s.service).includes(query) || (s.category && s.category.toLowerCase().includes(query)));
+        
+        this.state.bulkImportFilteredServices = filtered;
+        this.renderBulkImportServicesList(filtered);
+    },
+    
+    renderBulkImportServicesList(services) {
+        const container = document.getElementById('bulk-import-services-list');
+        if (services.length === 0) {
+            container.innerHTML = '<div class="empty-state"><i class="fas fa-search"></i><p>No services found</p></div>';
+            return;
+        }
+        const display = services.slice(0, 200);
+        const rate = parseFloat(document.getElementById('bulk-import-rate').value) || 4150;
+        
+        container.innerHTML = display.map(s => {
+            const isSelected = this.state.bulkImportSelectedServices.has(s.service);
+            const mmkPrice = Math.ceil(parseFloat(s.rate) * rate);
+            return `<div class="bulk-import-service-item ${isSelected ? 'selected' : ''}" onclick="AdminApp.toggleBulkImportService(${s.service})">
+                <div class="bulk-service-checkbox">
+                    <input type="checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation(); AdminApp.toggleBulkImportService(${s.service})">
+                </div>
+                <div class="bulk-service-info">
+                    <div class="bulk-service-name">${s.name}</div>
+                    <div class="bulk-service-details">
+                        <span class="service-id-badge">#${s.service}</span>
+                        <span class="service-category-badge">${s.category || 'N/A'}</span>
+                    </div>
+                </div>
+                <div class="bulk-service-price">
+                    <div class="price-usd">$${s.rate}</div>
+                    <div class="price-mmk">${mmkPrice.toLocaleString()} MMK</div>
+                </div>
+            </div>`;
+        }).join('');
+        
+        if (services.length > 200) {
+            container.innerHTML += `<p class="load-more-text">Showing 200 of ${services.length}. Use search to filter.</p>`;
+        }
+    },
+    
+    toggleBulkImportService(serviceId) {
+        if (this.state.bulkImportSelectedServices.has(serviceId)) {
+            this.state.bulkImportSelectedServices.delete(serviceId);
+        } else {
+            this.state.bulkImportSelectedServices.add(serviceId);
+        }
+        this.updateBulkImportUI();
+    },
+    
+    toggleBulkImportSelectAll() {
+        const cb = document.getElementById('bulk-import-select-all');
+        if (cb.checked) {
+            this.state.bulkImportFilteredServices.slice(0, 200).forEach(s => this.state.bulkImportSelectedServices.add(s.service));
+        } else {
+            this.state.bulkImportFilteredServices.slice(0, 200).forEach(s => this.state.bulkImportSelectedServices.delete(s.service));
+        }
+        this.updateBulkImportUI();
+    },
+    
+    updateBulkImportUI() {
+        const count = this.state.bulkImportSelectedServices.size;
+        document.getElementById('bulk-import-selected-count').textContent = `${count} selected`;
+        document.getElementById('bulk-import-save-count').textContent = count;
+        document.getElementById('bulk-import-save-btn').disabled = count === 0;
+        
+        // Re-render list to update checkboxes
+        if (this.state.bulkImportFilteredServices.length > 0) {
+            this.renderBulkImportServicesList(this.state.bulkImportFilteredServices);
+        }
+        
+        // Update preview
+        this.renderBulkImportPreview();
+    },
+    
+    recalculateBulkImportPrices() {
+        if (this.state.bulkImportFilteredServices.length > 0) {
+            this.renderBulkImportServicesList(this.state.bulkImportFilteredServices);
+        }
+        this.renderBulkImportPreview();
+    },
+    
+    renderBulkImportPreview() {
+        const previewContainer = document.getElementById('bulk-import-preview');
+        const selectedIds = [...this.state.bulkImportSelectedServices];
+        if (selectedIds.length === 0) {
+            previewContainer.innerHTML = '<div class="empty-state small"><p>Select products above to see price preview</p></div>';
+            return;
+        }
+        
+        const rate = parseFloat(document.getElementById('bulk-import-rate').value) || 4150;
+        const selectedServices = selectedIds.map(id => this.state.g2bulkServicesRaw.find(s => s.service === id)).filter(Boolean);
+        
+        previewContainer.innerHTML = `
+            <div class="preview-table">
+                <div class="preview-table-header">
+                    <span class="col-name">Product Name</span>
+                    <span class="col-usd">USD Rate</span>
+                    <span class="col-mmk">MMK Price</span>
+                    <span class="col-service">Service ID</span>
+                </div>
+                ${selectedServices.map(s => {
+                    const mmkPrice = Math.ceil(parseFloat(s.rate) * rate);
+                    return `<div class="preview-table-row">
+                        <span class="col-name">${s.name}</span>
+                        <span class="col-usd">$${s.rate}</span>
+                        <span class="col-mmk">${mmkPrice.toLocaleString()} MMK</span>
+                        <span class="col-service">#${s.service}</span>
+                    </div>`;
+                }).join('')}
+            </div>
+            <div class="preview-summary">
+                <span>Total: ${selectedServices.length} products</span>
+                <span>Exchange Rate: 1 USD = ${rate.toLocaleString()} MMK</span>
+            </div>
+        `;
+    },
+    
+    previewBulkImportIcon(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const preview = document.getElementById('bulk-import-icon-preview');
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            preview.innerHTML = `<img src="${e.target.result}" alt="Icon Preview">`;
+            preview.classList.remove('hidden');
+        };
+        reader.readAsDataURL(file);
+    },
+    
+    async saveBulkImport() {
+        const categoryId = document.getElementById('bulk-import-category').value;
+        if (!categoryId) { Utils.showToast('Please select a target category', 'warning'); return; }
+        
+        const selectedIds = [...this.state.bulkImportSelectedServices];
+        if (selectedIds.length === 0) { Utils.showToast('No products selected', 'warning'); return; }
+        
+        const iconInput = document.getElementById('bulk-import-icon');
+        if (!iconInput.files[0]) { Utils.showToast('Please upload a product icon', 'warning'); return; }
+        
+        const rate = parseFloat(document.getElementById('bulk-import-rate').value);
+        if (!rate || rate <= 0) { Utils.showToast('Please enter a valid exchange rate', 'warning'); return; }
+        
+        if (!confirm(`Import ${selectedIds.length} products with exchange rate 1 USD = ${rate} MMK?`)) return;
+        
+        Utils.showLoading(`Importing ${selectedIds.length} products...`);
+        
+        try {
+            // Upload icon once
+            const formData = new FormData();
+            formData.append('image', iconInput.files[0]);
+            const uploadResponse = await fetch(`https://api.imgbb.com/1/upload?key=d3b0e9fd43ff0eb762987129a2f21e9c`, { method: 'POST', body: formData });
+            const uploadResult = await uploadResponse.json();
+            if (!uploadResult.success) throw new Error(uploadResult.error?.message || 'Icon upload failed');
+            const iconUrl = uploadResult.data.url;
+            
+            // Create all products
+            const selectedServices = selectedIds.map(id => this.state.g2bulkServicesRaw.find(s => s.service === id)).filter(Boolean);
+            let successCount = 0;
+            let failCount = 0;
+            
+            for (const service of selectedServices) {
+                try {
+                    const mmkPrice = Math.ceil(parseFloat(service.rate) * rate);
+                    const productData = {
+                        categoryId: categoryId,
+                        name: service.name,
+                        price: mmkPrice,
+                        currency: 'MMK',
+                        discount: 0,
+                        deliveryTime: 'instant',
+                        icon: iconUrl,
+                        serviceId: parseInt(service.service),
+                        g2bulkRate: service.rate,
+                        g2bulkMin: parseInt(service.min) || 1,
+                        g2bulkMax: parseInt(service.max) || 1,
+                        g2bulkServiceName: service.name,
+                        exchangeRate: rate
+                    };
+                    await Database.createProduct(productData);
+                    successCount++;
+                } catch (e) {
+                    failCount++;
+                    console.error(`Failed to create product for service #${service.service}:`, e);
+                }
+            }
+            
+            await this.loadAdminData();
+            this.renderProducts();
+            this.closeBulkImportModal();
+            
+            if (failCount > 0) {
+                Utils.showToast(`Imported ${successCount} products. ${failCount} failed.`, 'warning');
+            } else {
+                Utils.showToast(`Successfully imported ${successCount} products!`, 'success');
+            }
+        } catch (error) {
+            Utils.showToast('Bulk import failed: ' + error.message, 'error');
+        } finally {
+            Utils.hideLoading();
+        }
+    },
+    
+    // ===== BULK PRICE UPDATE =====
+    
+    showBulkPriceUpdateModal() {
+        this.state.bulkPriceSelectedProducts = new Set();
+        
+        const catSelect = document.getElementById('bulk-price-category');
+        catSelect.innerHTML = '<option value="">-- Select Category --</option>' + this.state.categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+        
+        document.getElementById('bulk-price-select-all').checked = false;
+        document.getElementById('bulk-price-selected-count').textContent = '0 selected';
+        document.getElementById('bulk-price-rate').value = '';
+        document.getElementById('bulk-price-products-list').innerHTML = '<div class="empty-state small"><p>Select a category to load products</p></div>';
+        document.getElementById('bulk-price-preview').innerHTML = '<div class="empty-state small"><p>Enter new rate to see price changes</p></div>';
+        document.getElementById('bulk-price-save-btn').disabled = true;
+        document.getElementById('bulk-price-save-count').textContent = '0';
+        
+        document.getElementById('bulk-price-update-modal').classList.remove('hidden');
+    },
+    
+    closeBulkPriceUpdateModal() {
+        document.getElementById('bulk-price-update-modal').classList.add('hidden');
+    },
+    
+    onBulkPriceCategoryChange() {
+        const categoryId = document.getElementById('bulk-price-category').value;
+        this.state.bulkPriceSelectedProducts = new Set();
+        
+        if (!categoryId) {
+            document.getElementById('bulk-price-products-list').innerHTML = '<div class="empty-state small"><p>Select a category to load products</p></div>';
+            return;
+        }
+        
+        const products = this.state.products.filter(p => p.categoryId === categoryId);
+        this.renderBulkPriceProductsList(products);
+    },
+    
+    renderBulkPriceProductsList(products) {
+        const container = document.getElementById('bulk-price-products-list');
+        if (products.length === 0) {
+            container.innerHTML = '<div class="empty-state small"><p>No products in this category</p></div>';
+            return;
+        }
+        
+        container.innerHTML = products.map(p => {
+            const isSelected = this.state.bulkPriceSelectedProducts.has(p.id);
+            return `<div class="bulk-price-product-item ${isSelected ? 'selected' : ''}" onclick="AdminApp.toggleBulkPriceProduct('${p.id}')">
+                <div class="bulk-service-checkbox">
+                    <input type="checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation(); AdminApp.toggleBulkPriceProduct('${p.id}')">
+                </div>
+                <div class="bulk-price-product-info">
+                    <div class="bulk-service-name">${p.name}</div>
+                    <div class="bulk-service-details">
+                        ${p.serviceId ? `<span class="service-id-badge">#${p.serviceId}</span>` : '<span class="service-id-badge manual">Manual</span>'}
+                        ${p.g2bulkRate ? `<span class="rate-badge">$${p.g2bulkRate}/unit</span>` : ''}
+                    </div>
+                </div>
+                <div class="bulk-service-price">
+                    <div class="price-mmk">${p.price?.toLocaleString()} ${p.currency || 'MMK'}</div>
+                </div>
+            </div>`;
+        }).join('');
+    },
+    
+    toggleBulkPriceProduct(productId) {
+        if (this.state.bulkPriceSelectedProducts.has(productId)) {
+            this.state.bulkPriceSelectedProducts.delete(productId);
+        } else {
+            this.state.bulkPriceSelectedProducts.add(productId);
+        }
+        this.updateBulkPriceUI();
+    },
+    
+    toggleBulkPriceSelectAll() {
+        const categoryId = document.getElementById('bulk-price-category').value;
+        const products = this.state.products.filter(p => p.categoryId === categoryId);
+        const cb = document.getElementById('bulk-price-select-all');
+        
+        if (cb.checked) {
+            products.forEach(p => this.state.bulkPriceSelectedProducts.add(p.id));
+        } else {
+            products.forEach(p => this.state.bulkPriceSelectedProducts.delete(p.id));
+        }
+        this.updateBulkPriceUI();
+    },
+    
+    updateBulkPriceUI() {
+        const count = this.state.bulkPriceSelectedProducts.size;
+        document.getElementById('bulk-price-selected-count').textContent = `${count} selected`;
+        document.getElementById('bulk-price-save-count').textContent = count;
+        
+        const rate = parseFloat(document.getElementById('bulk-price-rate').value);
+        document.getElementById('bulk-price-save-btn').disabled = count === 0 || !rate || rate <= 0;
+        
+        // Re-render products list
+        const categoryId = document.getElementById('bulk-price-category').value;
+        if (categoryId) {
+            const products = this.state.products.filter(p => p.categoryId === categoryId);
+            this.renderBulkPriceProductsList(products);
+        }
+        
+        // Update preview
+        this.recalculateBulkPrices();
+    },
+    
+    recalculateBulkPrices() {
+        const previewContainer = document.getElementById('bulk-price-preview');
+        const selectedIds = [...this.state.bulkPriceSelectedProducts];
+        const rate = parseFloat(document.getElementById('bulk-price-rate').value);
+        
+        if (selectedIds.length === 0) {
+            previewContainer.innerHTML = '<div class="empty-state small"><p>Select products to see price changes</p></div>';
+            return;
+        }
+        
+        if (!rate || rate <= 0) {
+            previewContainer.innerHTML = '<div class="empty-state small"><p>Enter new exchange rate to see price changes</p></div>';
+            return;
+        }
+        
+        const selectedProducts = selectedIds.map(id => this.state.products.find(p => p.id === id)).filter(Boolean);
+        
+        previewContainer.innerHTML = `
+            <div class="preview-table">
+                <div class="preview-table-header">
+                    <span class="col-name">Product Name</span>
+                    <span class="col-usd">USD Rate</span>
+                    <span class="col-old">Old Price</span>
+                    <span class="col-new">New Price</span>
+                    <span class="col-diff">Difference</span>
+                </div>
+                ${selectedProducts.map(p => {
+                    const usdRate = parseFloat(p.g2bulkRate) || 0;
+                    const oldPrice = p.price || 0;
+                    const newPrice = usdRate > 0 ? Math.ceil(usdRate * rate) : oldPrice;
+                    const diff = newPrice - oldPrice;
+                    const diffClass = diff > 0 ? 'price-up' : diff < 0 ? 'price-down' : 'price-same';
+                    return `<div class="preview-table-row">
+                        <span class="col-name">${p.name}</span>
+                        <span class="col-usd">${usdRate > 0 ? '$' + usdRate : 'N/A'}</span>
+                        <span class="col-old">${oldPrice.toLocaleString()} MMK</span>
+                        <span class="col-new">${newPrice.toLocaleString()} MMK</span>
+                        <span class="col-diff ${diffClass}">${diff >= 0 ? '+' : ''}${diff.toLocaleString()} MMK</span>
+                    </div>`;
+                }).join('')}
+            </div>
+            <div class="preview-summary">
+                <span>Total: ${selectedProducts.length} products</span>
+                <span>New Rate: 1 USD = ${rate.toLocaleString()} MMK</span>
+            </div>
+        `;
+    },
+    
+    async saveBulkPriceUpdate() {
+        const selectedIds = [...this.state.bulkPriceSelectedProducts];
+        if (selectedIds.length === 0) { Utils.showToast('No products selected', 'warning'); return; }
+        
+        const rate = parseFloat(document.getElementById('bulk-price-rate').value);
+        if (!rate || rate <= 0) { Utils.showToast('Please enter a valid exchange rate', 'warning'); return; }
+        
+        if (!confirm(`Update prices for ${selectedIds.length} products with new rate 1 USD = ${rate} MMK?`)) return;
+        
+        Utils.showLoading(`Updating ${selectedIds.length} product prices...`);
+        
+        try {
+            let successCount = 0;
+            let failCount = 0;
+            let skippedCount = 0;
+            
+            for (const productId of selectedIds) {
+                const product = this.state.products.find(p => p.id === productId);
+                if (!product) { failCount++; continue; }
+                
+                const usdRate = parseFloat(product.g2bulkRate);
+                if (!usdRate || usdRate <= 0) {
+                    skippedCount++;
+                    continue;
+                }
+                
+                try {
+                    const newPrice = Math.ceil(usdRate * rate);
+                    await Database.updateProduct(productId, {
+                        ...product,
+                        price: newPrice,
+                        currency: 'MMK',
+                        exchangeRate: rate
+                    });
+                    successCount++;
+                } catch (e) {
+                    failCount++;
+                    console.error(`Failed to update product ${productId}:`, e);
+                }
+            }
+            
+            await this.loadAdminData();
+            this.renderProducts();
+            this.closeBulkPriceUpdateModal();
+            
+            let msg = `Updated ${successCount} prices.`;
+            if (skippedCount > 0) msg += ` ${skippedCount} skipped (no USD rate).`;
+            if (failCount > 0) msg += ` ${failCount} failed.`;
+            Utils.showToast(msg, failCount > 0 ? 'warning' : 'success');
+        } catch (error) {
+            Utils.showToast('Bulk price update failed: ' + error.message, 'error');
+        } finally {
+            Utils.hideLoading();
+        }
     },
     
     // ===== G2BULK SERVICES PAGE =====
@@ -831,15 +1316,10 @@ const AdminApp = {
         try {
             const result = await G2BulkAPI.getServices();
             this.state.g2bulkServicesRaw = result || [];
-            
             const cats = [...new Set(this.state.g2bulkServicesRaw.map(s => s.category).filter(Boolean))];
             this.state.g2bulkCategories = cats.sort();
-            
             const catFilter = document.getElementById('g2bulk-category-filter');
-            if (catFilter) {
-                catFilter.innerHTML = '<option value="all">All Categories</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
-            }
-            
+            if (catFilter) catFilter.innerHTML = '<option value="all">All Categories</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
             this.renderG2BulkServicesList(this.state.g2bulkServicesRaw);
             Utils.showToast(`Loaded ${this.state.g2bulkServicesRaw.length} services`, 'success');
         } catch (error) {
@@ -852,37 +1332,21 @@ const AdminApp = {
     filterG2BulkServices() {
         const query = (document.getElementById('g2bulk-search')?.value || '').toLowerCase();
         const catFilter = document.getElementById('g2bulk-category-filter')?.value || 'all';
-        
         let filtered = [...this.state.g2bulkServicesRaw];
-        
-        if (catFilter !== 'all') {
-            filtered = filtered.filter(s => s.category === catFilter);
-        }
-        
-        if (query) {
-            filtered = filtered.filter(s => 
-                s.name.toLowerCase().includes(query) || 
-                String(s.service).includes(query) ||
-                (s.category && s.category.toLowerCase().includes(query))
-            );
-        }
-        
+        if (catFilter !== 'all') filtered = filtered.filter(s => s.category === catFilter);
+        if (query) filtered = filtered.filter(s => s.name.toLowerCase().includes(query) || String(s.service).includes(query) || (s.category && s.category.toLowerCase().includes(query)));
         this.renderG2BulkServicesList(filtered);
     },
     
     renderG2BulkServicesList(services) {
         const container = document.getElementById('g2bulk-services-list');
         const countEl = document.getElementById('g2bulk-services-count');
-        
         if (countEl) countEl.textContent = `${services.length} services found`;
-        
         if (services.length === 0) {
             container.innerHTML = '<div class="empty-state"><i class="fas fa-search"></i><p>No services found</p></div>';
             return;
         }
-        
         const display = services.slice(0, 200);
-        
         container.innerHTML = display.map(service => `
             <div class="g2bulk-service-card">
                 <div class="service-header">
@@ -900,7 +1364,6 @@ const AdminApp = {
                 </button>
             </div>
         `).join('');
-        
         if (services.length > 200) {
             container.innerHTML += `<p class="load-more-text">Showing 200 of ${services.length} services. Use search to find more.</p>`;
         }
@@ -909,7 +1372,6 @@ const AdminApp = {
     quickAddProduct(serviceId) {
         const service = this.state.g2bulkServicesRaw.find(s => s.service === serviceId);
         if (!service) return;
-        
         this.showAddProduct();
         document.getElementById('product-service-id').value = service.service;
         document.getElementById('product-name').value = service.name;
@@ -928,7 +1390,6 @@ const AdminApp = {
         if (activeTab) activeTab.classList.add('active');
         document.getElementById('banner-type1').classList.toggle('hidden', type !== 'type1');
         document.getElementById('banner-type2').classList.toggle('hidden', type !== 'type2');
-        
         const banners = type === 'type1' ? (this.state.banners.type1 || []) : (this.state.banners.type2 || []);
         const container = document.getElementById(`banners-${type}-list`);
         if (!container) return;
@@ -984,42 +1445,26 @@ const AdminApp = {
         finally { Utils.hideLoading(); }
     },
     
-    // ===== INPUT TABLES (COMPLETELY REWRITTEN - JSON Config System) =====
+    // ===== INPUT TABLES =====
     renderInputTables() {
         const container = document.getElementById('admin-input-tables-list');
         if (!container) return;
         if (this.state.inputTables.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fas fa-keyboard"></i><p>No input tables yet</p></div>'; return; }
         container.innerHTML = this.state.inputTables.map(table => {
             const cat = this.state.categories.find(c => c.id === table.categoryId);
-            
-            // Parse checker config for display
             let checkerInfo = '';
             if (table.checkerEnabled && table.checkerConfig) {
                 let config = table.checkerConfig;
-                if (typeof config === 'string') {
-                    try { config = JSON.parse(config); } catch(e) {}
-                }
+                if (typeof config === 'string') { try { config = JSON.parse(config); } catch(e) {} }
                 if (config && typeof config === 'object') {
                     const url = config.url || config.apiUrl || '';
                     const method = config.method || 'POST';
-                    checkerInfo = `
-                        <div class="checker-config-preview">
-                            <span class="checker-badge"><i class="fas fa-search"></i> ID Checker Enabled</span>
-                            <span class="checker-method-badge ${method.toLowerCase()}">${method}</span>
-                            <span class="checker-url-preview" title="${url}">${url.length > 40 ? url.substring(0, 40) + '...' : url}</span>
-                        </div>
-                    `;
+                    checkerInfo = `<div class="checker-config-preview"><span class="checker-badge"><i class="fas fa-search"></i> ID Checker Enabled</span><span class="checker-method-badge ${method.toLowerCase()}">${method}</span><span class="checker-url-preview" title="${url}">${url.length > 40 ? url.substring(0, 40) + '...' : url}</span></div>`;
                 }
             }
-            
             return `<div class="input-table-card">
                 <div class="input-table-icon"><i class="fas fa-keyboard"></i></div>
-                <div class="input-table-info">
-                    <h4>${table.name}</h4>
-                    <p>${cat?.name || 'Unknown'}</p>
-                    <p class="placeholder">"${table.placeholder}"</p>
-                    ${checkerInfo}
-                </div>
+                <div class="input-table-info"><h4>${table.name}</h4><p>${cat?.name || 'Unknown'}</p><p class="placeholder">"${table.placeholder}"</p>${checkerInfo}</div>
                 <div class="input-table-actions">
                     <button class="action-btn edit" onclick="AdminApp.editInputTable('${table.id}')"><i class="fas fa-edit"></i></button>
                     <button class="action-btn delete" onclick="AdminApp.deleteInputTable('${table.id}')"><i class="fas fa-trash"></i></button>
@@ -1028,7 +1473,6 @@ const AdminApp = {
         }).join('');
     },
     
-    // COMPLETELY REWRITTEN: Show Add Input Table with JSON Config
     showAddInputTable() {
         this.state.editingItem = null;
         document.getElementById('input-table-modal-title').textContent = 'Add Input Table';
@@ -1046,7 +1490,6 @@ const AdminApp = {
         document.getElementById('add-input-table-modal').classList.remove('hidden');
     },
     
-    // COMPLETELY REWRITTEN: Edit Input Table with JSON Config
     editInputTable(tableId) {
         const table = this.state.inputTables.find(t => t.id === tableId);
         if (!table) return;
@@ -1055,44 +1498,27 @@ const AdminApp = {
         document.getElementById('input-table-category').innerHTML = '<option value="">Select Category</option>' + this.state.categories.map(c => `<option value="${c.id}" ${c.id === table.categoryId ? 'selected' : ''}>${c.name}</option>`).join('');
         document.getElementById('input-table-name').value = table.name;
         document.getElementById('input-table-placeholder').value = table.placeholder;
-        
         document.getElementById('checker-enabled').checked = table.checkerEnabled || false;
         document.getElementById('checker-json-section').classList.toggle('hidden', !table.checkerEnabled);
-        
         if (table.checkerConfig) {
-            let configStr = '';
-            if (typeof table.checkerConfig === 'string') {
-                configStr = table.checkerConfig;
-            } else {
-                configStr = JSON.stringify(table.checkerConfig, null, 2);
-            }
+            let configStr = typeof table.checkerConfig === 'string' ? table.checkerConfig : JSON.stringify(table.checkerConfig, null, 2);
             document.getElementById('checker-json-config').value = configStr;
-            
-            // Show preview
             this.previewCheckerConfig();
         } else {
             document.getElementById('checker-json-config').value = '';
         }
-        
         document.getElementById('checker-test-section').classList.toggle('hidden', !table.checkerEnabled);
         document.getElementById('checker-test-value').value = '';
         document.getElementById('checker-test-result').classList.add('hidden');
-        
         document.getElementById('add-input-table-modal').classList.remove('hidden');
     },
     
     closeAddInputTable() { document.getElementById('add-input-table-modal').classList.add('hidden'); this.state.editingItem = null; },
     
-    // NEW: Preview parsed JSON config
     previewCheckerConfig() {
         const jsonStr = document.getElementById('checker-json-config').value.trim();
         const previewDiv = document.getElementById('checker-json-preview');
-        
-        if (!jsonStr) {
-            previewDiv.classList.add('hidden');
-            return;
-        }
-        
+        if (!jsonStr) { previewDiv.classList.add('hidden'); return; }
         try {
             const config = JSON.parse(jsonStr);
             const url = config.url || config.apiUrl || 'N/A';
@@ -1100,199 +1526,39 @@ const AdminApp = {
             const hasHeaders = config.headers && Object.keys(config.headers).length > 0;
             const hasBody = !!config.body || !!config.bodyTemplate;
             const rp = config.responsePath || config.response || {};
-            
-            // Extract required inputs from body
             let requiredInputs = [];
             if (config.body) {
                 const bodyStr = JSON.stringify(config.body);
                 const matches = bodyStr.match(/\{\{([^}]+)\}\}/g) || [];
                 requiredInputs = matches.map(m => m.replace(/\{\{|\}\}/g, ''));
             }
-            
-            previewDiv.innerHTML = `
-                <div class="json-preview-card">
-                    <h4><i class="fas fa-check-circle" style="color: var(--success);"></i> Config Parsed Successfully</h4>
-                    <div class="preview-grid">
-                        <div class="preview-item">
-                            <span class="preview-label">URL</span>
-                            <span class="preview-value url">${url}</span>
-                        </div>
-                        <div class="preview-item">
-                            <span class="preview-label">Method</span>
-                            <span class="preview-value"><span class="method-badge ${method.toLowerCase()}">${method}</span></span>
-                        </div>
-                        <div class="preview-item">
-                            <span class="preview-label">Headers</span>
-                            <span class="preview-value">${hasHeaders ? Object.keys(config.headers).join(', ') : 'Default'}</span>
-                        </div>
-                        ${hasBody ? `<div class="preview-item">
-                            <span class="preview-label">Body</span>
-                            <span class="preview-value">Ã¢Å“â€¦ Configured</span>
-                        </div>` : ''}
-                        ${requiredInputs.length > 0 ? `<div class="preview-item">
-                            <span class="preview-label">Required Inputs</span>
-                            <span class="preview-value">${requiredInputs.map(r => `<span class="input-ref-tag">{{${r}}}</span>`).join(' ')}</span>
-                        </div>` : ''}
-                        <div class="preview-item">
-                            <span class="preview-label">Response Mapping</span>
-                            <span class="preview-value">
-                                ${rp.valid ? `Valid: <code>${rp.valid}</code>` : ''}
-                                ${rp.nickname ? ` | Nickname: <code>${rp.nickname}</code>` : ''}
-                                ${rp.country ? ` | Country: <code>${rp.country}</code>` : ''}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            `;
+            previewDiv.innerHTML = `<div class="json-preview-card"><h4><i class="fas fa-check-circle" style="color: var(--success);"></i> Config Parsed Successfully</h4><div class="preview-grid">
+                <div class="preview-item"><span class="preview-label">URL</span><span class="preview-value url">${url}</span></div>
+                <div class="preview-item"><span class="preview-label">Method</span><span class="preview-value"><span class="method-badge ${method.toLowerCase()}">${method}</span></span></div>
+                <div class="preview-item"><span class="preview-label">Headers</span><span class="preview-value">${hasHeaders ? Object.keys(config.headers).join(', ') : 'Default'}</span></div>
+                ${hasBody ? `<div class="preview-item"><span class="preview-label">Body</span><span class="preview-value">✅ Configured</span></div>` : ''}
+                ${requiredInputs.length > 0 ? `<div class="preview-item"><span class="preview-label">Required Inputs</span><span class="preview-value">${requiredInputs.map(r => `<span class="input-ref-tag">{{${r}}}</span>`).join(' ')}</span></div>` : ''}
+                <div class="preview-item"><span class="preview-label">Response Mapping</span><span class="preview-value">${rp.valid ? `Valid: <code>${rp.valid}</code>` : ''}${rp.nickname ? ` | Nickname: <code>${rp.nickname}</code>` : ''}${rp.country ? ` | Country: <code>${rp.country}</code>` : ''}</span></div>
+            </div></div>`;
             previewDiv.classList.remove('hidden');
-            
-            // Show test section
             document.getElementById('checker-test-section').classList.remove('hidden');
-            
         } catch (e) {
-            previewDiv.innerHTML = `
-                <div class="json-preview-card error">
-                    <h4><i class="fas fa-exclamation-triangle" style="color: var(--danger);"></i> Invalid JSON</h4>
-                    <p class="error-text">${e.message}</p>
-                </div>
-            `;
+            previewDiv.innerHTML = `<div class="json-preview-card error"><h4><i class="fas fa-exclamation-triangle" style="color: var(--danger);"></i> Invalid JSON</h4><p class="error-text">${e.message}</p></div>`;
             previewDiv.classList.remove('hidden');
             document.getElementById('checker-test-section').classList.add('hidden');
         }
     },
     
-    // NEW: Load sample JSON configs
     loadSampleConfig(type) {
         const samples = {
-            'rapidapi-mlbb': `{
-  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",
-  "method": "POST",
-  "headers": {
-    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",
-    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",
-    "Content-Type": "application/json"
-  },
-  "body": {
-    "game": "mobile-legends",
-    "userid": "{{value}}",
-    "zoneid": "{{Zone ID}}"
-  },
-  "responsePath": {
-    "valid": "success",
-    "nickname": "data.username",
-    "country": "data.country"
-  },
-  "errorMessage": "Game ID not found! Please check your User ID and Zone ID."
-}`,
-            'rapidapi-ff': `{
-  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",
-  "method": "POST",
-  "headers": {
-    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",
-    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",
-    "Content-Type": "application/json"
-  },
-  "body": {
-    "game": "free-fire",
-    "userid": "{{value}}"
-  },
-  "responsePath": {
-    "valid": "success",
-    "nickname": "data.username",
-    "country": "data.country"
-  },
-  "errorMessage": "Free Fire ID not found! Please check and try again."
-}`,
-            'rapidapi-genshin': `{
-  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",
-  "method": "POST",
-  "headers": {
-    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",
-    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",
-    "Content-Type": "application/json"
-  },
-  "body": {
-    "game": "genshin-impact",
-    "userid": "{{value}}"
-  },
-  "responsePath": {
-    "valid": "success",
-    "nickname": "data.username",
-    "country": "data.country"
-  },
-  "errorMessage": "Genshin Impact UID not found!"
-}`,
-            'rapidapi-pubg': `{
-  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",
-  "method": "POST",
-  "headers": {
-    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",
-    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",
-    "Content-Type": "application/json"
-  },
-  "body": {
-    "game": "pubg-mobile",
-    "userid": "{{value}}"
-  },
-  "responsePath": {
-    "valid": "success",
-    "nickname": "data.username",
-    "country": "data.country"
-  },
-  "errorMessage": "PUBG Mobile ID not found!"
-}`,
-            'rapidapi-honkai': `{
-  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",
-  "method": "POST",
-  "headers": {
-    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",
-    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",
-    "Content-Type": "application/json"
-  },
-  "body": {
-    "game": "honkai-star-rail",
-    "userid": "{{value}}"
-  },
-  "responsePath": {
-    "valid": "success",
-    "nickname": "data.username",
-    "country": "data.country"
-  },
-  "errorMessage": "Honkai Star Rail UID not found!"
-}`,
-            'custom-get': `{
-  "url": "https://your-api.com/check?id={{value}}",
-  "method": "GET",
-  "headers": {
-    "Authorization": "Bearer YOUR_TOKEN"
-  },
-  "responsePath": {
-    "valid": "status",
-    "nickname": "data.name",
-    "country": "data.region"
-  },
-  "errorMessage": "ID not found!"
-}`,
-            'custom-post': `{
-  "url": "https://your-api.com/verify",
-  "method": "POST",
-  "headers": {
-    "Content-Type": "application/json",
-    "Authorization": "Bearer YOUR_TOKEN"
-  },
-  "body": {
-    "user_id": "{{value}}",
-    "server_id": "{{Server ID}}"
-  },
-  "responsePath": {
-    "valid": "success",
-    "nickname": "result.player_name",
-    "country": "result.country_code"
-  },
-  "errorMessage": "Player not found!"
-}`
+            'rapidapi-mlbb': `{\n  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",\n  "method": "POST",\n  "headers": {\n    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",\n    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",\n    "Content-Type": "application/json"\n  },\n  "body": {\n    "game": "mobile-legends",\n    "userid": "{{value}}",\n    "zoneid": "{{Zone ID}}"\n  },\n  "responsePath": {\n    "valid": "success",\n    "nickname": "data.username",\n    "country": "data.country"\n  },\n  "errorMessage": "Game ID not found! Please check your User ID and Zone ID."\n}`,
+            'rapidapi-ff': `{\n  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",\n  "method": "POST",\n  "headers": {\n    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",\n    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",\n    "Content-Type": "application/json"\n  },\n  "body": {\n    "game": "free-fire",\n    "userid": "{{value}}"\n  },\n  "responsePath": {\n    "valid": "success",\n    "nickname": "data.username",\n    "country": "data.country"\n  },\n  "errorMessage": "Free Fire ID not found!"\n}`,
+            'rapidapi-genshin': `{\n  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",\n  "method": "POST",\n  "headers": {\n    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",\n    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",\n    "Content-Type": "application/json"\n  },\n  "body": {\n    "game": "genshin-impact",\n    "userid": "{{value}}"\n  },\n  "responsePath": {\n    "valid": "success",\n    "nickname": "data.username",\n    "country": "data.country"\n  },\n  "errorMessage": "Genshin Impact UID not found!"\n}`,
+            'rapidapi-pubg': `{\n  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",\n  "method": "POST",\n  "headers": {\n    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",\n    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",\n    "Content-Type": "application/json"\n  },\n  "body": {\n    "game": "pubg-mobile",\n    "userid": "{{value}}"\n  },\n  "responsePath": {\n    "valid": "success",\n    "nickname": "data.username",\n    "country": "data.country"\n  },\n  "errorMessage": "PUBG Mobile ID not found!"\n}`,
+            'rapidapi-honkai': `{\n  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",\n  "method": "POST",\n  "headers": {\n    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",\n    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",\n    "Content-Type": "application/json"\n  },\n  "body": {\n    "game": "honkai-star-rail",\n    "userid": "{{value}}"\n  },\n  "responsePath": {\n    "valid": "success",\n    "nickname": "data.username",\n    "country": "data.country"\n  },\n  "errorMessage": "Honkai Star Rail UID not found!"\n}`,
+            'custom-get': `{\n  "url": "https://your-api.com/check?id={{value}}",\n  "method": "GET",\n  "headers": {\n    "Authorization": "Bearer YOUR_TOKEN"\n  },\n  "responsePath": {\n    "valid": "status",\n    "nickname": "data.name",\n    "country": "data.region"\n  },\n  "errorMessage": "ID not found!"\n}`,
+            'custom-post': `{\n  "url": "https://your-api.com/verify",\n  "method": "POST",\n  "headers": {\n    "Content-Type": "application/json",\n    "Authorization": "Bearer YOUR_TOKEN"\n  },\n  "body": {\n    "user_id": "{{value}}",\n    "server_id": "{{Server ID}}"\n  },\n  "responsePath": {\n    "valid": "success",\n    "nickname": "result.player_name",\n    "country": "result.country_code"\n  },\n  "errorMessage": "Player not found!"\n}`
         };
-        
         const config = samples[type];
         if (config) {
             document.getElementById('checker-json-config').value = config;
@@ -1301,33 +1567,21 @@ const AdminApp = {
         }
     },
     
-    // COMPLETELY REWRITTEN: Save Input Table with JSON Config
     async saveInputTable() {
         const categoryId = document.getElementById('input-table-category').value;
         const name = document.getElementById('input-table-name').value.trim();
         const placeholder = document.getElementById('input-table-placeholder').value.trim();
         const checkerEnabled = document.getElementById('checker-enabled').checked;
-        
         if (!categoryId || !name || !placeholder) { Utils.showToast('Please fill all fields', 'warning'); return; }
-        
         let checkerConfig = null;
         if (checkerEnabled) {
             const jsonStr = document.getElementById('checker-json-config').value.trim();
             if (!jsonStr) { Utils.showToast('Please enter checker JSON config', 'warning'); return; }
-            
             try {
                 checkerConfig = JSON.parse(jsonStr);
-                // Validate required fields
-                if (!checkerConfig.url && !checkerConfig.apiUrl) {
-                    Utils.showToast('Config must have "url" field', 'warning');
-                    return;
-                }
-            } catch (e) {
-                Utils.showToast('Invalid JSON: ' + e.message, 'error');
-                return;
-            }
+                if (!checkerConfig.url && !checkerConfig.apiUrl) { Utils.showToast('Config must have "url" field', 'warning'); return; }
+            } catch (e) { Utils.showToast('Invalid JSON: ' + e.message, 'error'); return; }
         }
-        
         Utils.showLoading('Saving...');
         try {
             const data = { categoryId, name, placeholder, checkerEnabled, checkerConfig };
@@ -1346,110 +1600,46 @@ const AdminApp = {
         finally { Utils.hideLoading(); }
     },
     
-    // COMPLETELY REWRITTEN: Test Checker with JSON Config
     async testChecker() {
         const testValue = document.getElementById('checker-test-value').value.trim();
         if (!testValue) { Utils.showToast('Enter a test value', 'warning'); return; }
-        
         const jsonStr = document.getElementById('checker-json-config').value.trim();
         if (!jsonStr) { Utils.showToast('Enter JSON config first', 'warning'); return; }
-        
         const resultDiv = document.getElementById('checker-test-result');
-        resultDiv.innerHTML = `
-            <div class="test-result-card loading">
-                <div class="checker-loading-content">
-                    <div class="checker-spinner"></div>
-                    <span>Testing Game ID Checker...</span>
-                </div>
-            </div>
-        `;
+        resultDiv.innerHTML = `<div class="test-result-card loading"><div class="checker-loading-content"><div class="checker-spinner"></div><span>Testing Game ID Checker...</span></div></div>`;
         resultDiv.classList.remove('hidden');
-        
         try {
             let config;
-            try { config = JSON.parse(jsonStr); } 
-            catch(e) { 
-                resultDiv.innerHTML = `<div class="test-result-card error"><i class="fas fa-exclamation-triangle"></i> Invalid JSON: ${e.message}</div>`;
-                return; 
-            }
-            
-            // Build test input values from other test inputs if any
+            try { config = JSON.parse(jsonStr); } catch(e) { resultDiv.innerHTML = `<div class="test-result-card error"><i class="fas fa-exclamation-triangle"></i> Invalid JSON: ${e.message}</div>`; return; }
             const testInputValues = {};
             const requiredInputs = GameIdChecker.getRequiredInputs(config);
             requiredInputs.forEach(inputName => {
                 const testInputEl = document.getElementById(`checker-test-${inputName.replace(/\s/g, '-').toLowerCase()}`);
-                if (testInputEl) {
-                    testInputValues[inputName] = testInputEl.value || '';
-                }
+                if (testInputEl) testInputValues[inputName] = testInputEl.value || '';
             });
-            
             const result = await GameIdChecker.check(config, testValue, testInputValues);
-            
             if (result && result.valid) {
                 let infoRows = '';
                 if (result.nickname) infoRows += `<div class="test-info-row"><span>Nickname:</span><strong>${result.nickname}</strong></div>`;
                 if (result.country) infoRows += `<div class="test-info-row"><span>Country:</span><strong>${CountryHelper.getDisplay(result.country)}</strong></div>`;
-                
-                resultDiv.innerHTML = `
-                    <div class="test-result-card valid">
-                        <div class="test-result-header valid">
-                            <i class="fas fa-check-circle"></i> Test Successful - Account Found!
-                        </div>
-                        <div class="test-result-body">
-                            ${infoRows}
-                            <details class="raw-response">
-                                <summary>Raw API Response</summary>
-                                <pre>${JSON.stringify(result.raw, null, 2)}</pre>
-                            </details>
-                        </div>
-                    </div>
-                `;
+                resultDiv.innerHTML = `<div class="test-result-card valid"><div class="test-result-header valid"><i class="fas fa-check-circle"></i> Test Successful - Account Found!</div><div class="test-result-body">${infoRows}<details class="raw-response"><summary>Raw API Response</summary><pre>${JSON.stringify(result.raw, null, 2)}</pre></details></div></div>`;
             } else {
-                resultDiv.innerHTML = `
-                    <div class="test-result-card invalid">
-                        <div class="test-result-header invalid">
-                            <i class="fas fa-times-circle"></i> Test Failed - Account Not Found
-                        </div>
-                        <div class="test-result-body">
-                            ${result?.error ? `<p class="error-msg">Error: ${result.error}</p>` : ''}
-                            <details class="raw-response">
-                                <summary>Raw API Response</summary>
-                                <pre>${JSON.stringify(result?.raw || {}, null, 2)}</pre>
-                            </details>
-                        </div>
-                    </div>
-                `;
+                resultDiv.innerHTML = `<div class="test-result-card invalid"><div class="test-result-header invalid"><i class="fas fa-times-circle"></i> Test Failed - Account Not Found</div><div class="test-result-body">${result?.error ? `<p class="error-msg">Error: ${result.error}</p>` : ''}<details class="raw-response"><summary>Raw API Response</summary><pre>${JSON.stringify(result?.raw || {}, null, 2)}</pre></details></div></div>`;
             }
         } catch (error) {
-            resultDiv.innerHTML = `
-                <div class="test-result-card error">
-                    <div class="test-result-header error">
-                        <i class="fas fa-exclamation-triangle"></i> Test Error
-                    </div>
-                    <p>${error.message}</p>
-                </div>
-            `;
+            resultDiv.innerHTML = `<div class="test-result-card error"><div class="test-result-header error"><i class="fas fa-exclamation-triangle"></i> Test Error</div><p>${error.message}</p></div>`;
         }
     },
     
-    // NEW: Update test inputs when config changes (for multi-input support)
     updateTestInputs() {
         const jsonStr = document.getElementById('checker-json-config').value.trim();
         const testInputsContainer = document.getElementById('checker-test-extra-inputs');
-        
         if (!jsonStr || !testInputsContainer) return;
-        
         try {
             const config = JSON.parse(jsonStr);
             const requiredInputs = GameIdChecker.getRequiredInputs(config);
-            
             if (requiredInputs.length > 0) {
-                testInputsContainer.innerHTML = requiredInputs.map(name => `
-                    <div class="test-extra-input">
-                        <label>${name}</label>
-                        <input type="text" id="checker-test-${name.replace(/\s/g, '-').toLowerCase()}" placeholder="Enter test ${name}">
-                    </div>
-                `).join('');
+                testInputsContainer.innerHTML = requiredInputs.map(name => `<div class="test-extra-input"><label>${name}</label><input type="text" id="checker-test-${name.replace(/\s/g, '-').toLowerCase()}" placeholder="Enter test ${name}"></div>`).join('');
                 testInputsContainer.classList.remove('hidden');
             } else {
                 testInputsContainer.innerHTML = '';
@@ -1565,7 +1755,7 @@ const AdminApp = {
         const container = document.getElementById('admin-banned-list');
         if (!container) return;
         if (this.state.bannedUsers.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fas fa-ban"></i><p>No banned users</p></div>'; return; }
-        container.innerHTML = this.state.bannedUsers.map(user => `<div class="banned-card"><div class="banned-icon"><i class="fas fa-user-slash"></i></div><div class="banned-info"><h4>${user.firstName || 'User'}</h4><p>@${user.username || 'N/A'} Ã¢â‚¬Â¢ ${user.telegramId}</p><p class="reason"><strong>Reason:</strong> ${user.reason}</p><p class="date">Banned: ${Utils.formatDate(user.bannedAt, 'long')}</p></div><button class="btn btn-success btn-sm" onclick="AdminApp.unbanUser('${user.telegramId}')"><i class="fas fa-check"></i> Unban</button></div>`).join('');
+        container.innerHTML = this.state.bannedUsers.map(user => `<div class="banned-card"><div class="banned-icon"><i class="fas fa-user-slash"></i></div><div class="banned-info"><h4>${user.firstName || 'User'}</h4><p>@${user.username || 'N/A'} • ${user.telegramId}</p><p class="reason"><strong>Reason:</strong> ${user.reason}</p><p class="date">Banned: ${Utils.formatDate(user.bannedAt, 'long')}</p></div><button class="btn btn-success btn-sm" onclick="AdminApp.unbanUser('${user.telegramId}')"><i class="fas fa-check"></i> Unban</button></div>`).join('');
     },
     
     async unbanUser(telegramId) {
@@ -1598,7 +1788,7 @@ const AdminApp = {
     closeAddEmoji() { document.getElementById('add-emoji-modal').classList.add('hidden'); },
     
     loadEmojiPicker() {
-        const emojis = ['Ã°Å¸Ëœâ‚¬','Ã°Å¸ËœÆ’','Ã°Å¸Ëœâ€ž','Ã°Å¸ËœÂ','Ã°Å¸Ëœâ€ ','Ã°Å¸Ëœâ€¦','Ã°Å¸Â¤Â£','Ã°Å¸Ëœâ€š','Ã°Å¸â„¢â€š','Ã°Å¸â„¢Æ’','Ã°Å¸Ëœâ€°','Ã°Å¸ËœÅ ','Ã°Å¸Ëœâ€¡','Ã°Å¸Â¥Â°','Ã°Å¸ËœÂ','Ã°Å¸Â¤Â©','Ã°Å¸ËœËœ','Ã°Å¸Ëœâ€”','Ã°Å¸ËœÅ¡','Ã°Å¸Ëœâ„¢','Ã°Å¸Ëœâ€¹','Ã°Å¸Ëœâ€º','Ã°Å¸ËœÅ“','Ã°Å¸Â¤Âª','Ã°Å¸ËœÂ','Ã°Å¸Â¤â€˜','Ã°Å¸Â¤â€”','Ã°Å¸Â¤Â­','Ã°Å¸Â¤Â«','Ã°Å¸Â¤â€','Ã°Å¸ËœÂ','Ã°Å¸Ëœâ€˜','Ã°Å¸ËœÂ¶','Ã°Å¸ËœÂ','Ã°Å¸Ëœâ€™','Ã°Å¸â„¢â€ž','Ã°Å¸ËœÂ¬','Ã°Å¸ËœÂ®','Ã°Å¸Â¤Â¯','Ã°Å¸ËœÂ³','Ã°Å¸Â¥Âµ','Ã°Å¸Â¥Â¶','Ã°Å¸ËœÂ±','Ã°Å¸ËœÂ¨','Ã°Å¸ËœÂ°','Ã°Å¸ËœÂ¥','Ã°Å¸ËœÂ¢','Ã°Å¸ËœÂ­','Ã°Å¸ËœÂ¤','Ã°Å¸Ëœ ','Ã°Å¸ËœÂ¡','Ã°Å¸Â¤Â¬','Ã°Å¸ËœË†','Ã°Å¸â€˜Â¿','Ã°Å¸â€™â‚¬','Ã¢Ëœ Ã¯Â¸Â','Ã°Å¸â€™Â©','Ã°Å¸Â¤Â¡','Ã°Å¸â€˜Â»','Ã°Å¸â€˜Â½','Ã°Å¸â€˜Â¾','Ã°Å¸Â¤â€“','Ã¢ÂÂ¤Ã¯Â¸Â','Ã°Å¸Â§Â¡','Ã°Å¸â€™â€º','Ã°Å¸â€™Å¡','Ã°Å¸â€™â„¢','Ã°Å¸â€™Å“','Ã°Å¸â€“Â¤','Ã°Å¸Â¤Â','Ã°Å¸Â¤Å½','Ã°Å¸â€™â€','Ã°Å¸â€™â€¢','Ã°Å¸â€™Å¾','Ã°Å¸â€™â€œ','Ã°Å¸â€™â€”','Ã°Å¸â€™â€“','Ã°Å¸â€™Ëœ','Ã¢Â­Â','Ã°Å¸Å’Å¸','Ã¢Å“Â¨','Ã°Å¸â€™Â«','Ã°Å¸â€Â¥','Ã°Å¸â€™Â¥','Ã°Å¸â€™Â¢','Ã°Å¸â€™Â¦','Ã°Å¸â€™Â¨','Ã°Å¸â€™Â£','Ã°Å¸â€˜â€¹','Ã°Å¸Â¤Å¡','Ã°Å¸â€“ÂÃ¯Â¸Â','Ã¢Å“â€¹','Ã°Å¸â€“â€“','Ã°Å¸â€˜Å’','Ã°Å¸Â¤Å’','Ã°Å¸Â¤Â','Ã¢Å“Å’Ã¯Â¸Â','Ã°Å¸Â¤Å¾','Ã°Å¸Â¤Å¸','Ã°Å¸Â¤Ëœ','Ã°Å¸Â¤â„¢','Ã°Å¸â€˜Ë†','Ã°Å¸â€˜â€°','Ã°Å¸â€˜â€ ','Ã°Å¸â€˜â€¡','Ã¢ËœÂÃ¯Â¸Â','Ã°Å¸â€˜Â','Ã°Å¸â€˜Å½','Ã¢Å“Å ','Ã°Å¸â€˜Å ','Ã°Å¸Â¤â€º','Ã°Å¸Â¤Å“','Ã°Å¸â€˜Â','Ã°Å¸â„¢Å’','Ã°Å¸â€˜Â','Ã°Å¸Â¤Â²','Ã°Å¸Â¤Â','Ã°Å¸â„¢Â','Ã°Å¸Å½Â®','Ã°Å¸â€¢Â¹Ã¯Â¸Â','Ã°Å¸Å½Â°','Ã°Å¸Å½Â²','Ã°Å¸Â§Â©','Ã°Å¸Å½Â¯','Ã°Å¸Å½Â±','Ã°Å¸â€Â®','Ã°Å¸Â§Â¿','Ã°Å¸Å½Âª','Ã°Å¸â€™Å½','Ã°Å¸â€™Â°','Ã°Å¸â€™Âµ','Ã°Å¸â€™Â´','Ã°Å¸â€™Â¶','Ã°Å¸â€™Â·','Ã°Å¸â€™Â¸','Ã°Å¸â€™Â³','Ã°Å¸Ââ€ ','Ã°Å¸Â¥â€¡','Ã°Å¸Å½Â','Ã°Å¸Å½â‚¬','Ã°Å¸Å½Ë†','Ã°Å¸Å½â€°','Ã°Å¸Å½Å ','Ã°Å¸Å½â€ž','Ã°Å¸Å½Æ’','Ã¢Å¡Â¡','Ã¢Ëœâ‚¬Ã¯Â¸Â','Ã°Å¸Å’â„¢'];
+        const emojis = ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','😐','😑','😶','😏','😒','🙄','😬','😮','🤐','😳','🥵','🥶','😱','😨','😰','😥','😢','😭','😤','😠','😡','🤬','😈','👿','💀','☠️','💩','🤡','👻','👽','👾','🤖','❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','💕','💞','💓','💗','💖','💘','💝','⭐','🌟','✨','💫','🎵','🎶','💎','🔥','🎮','🕹️','🎲','🧩','🎯','🎰','🎪','🎭','🏆','🥇','🎖️','🏅','🎗️','✅','❌','⚡','🌀','🔮','💡','🔑','🗝️','🛡️','⚔️','🔫','💣','🧲','🪄','💰','💵','💴','💶','💷','💸','💳','🏦','🥊','🎁','🎀','🎈','🎉','🎊','🎋','⚽','☀️','🔱'];
         document.getElementById('emoji-picker-grid').innerHTML = emojis.map(e => `<div class="emoji-item" onclick="AdminApp.selectTriggerEmoji('${e}')">${e}</div>`).join('');
     },
     selectTriggerEmoji(emoji) { document.getElementById('emoji-trigger').value = emoji; this.closeEmojiPicker(); },
@@ -1719,6 +1909,12 @@ function closeEmojiPicker() { AdminApp.closeEmojiPicker(); }
 function saveCustomEmoji() { AdminApp.saveCustomEmoji(); }
 function triggerEmojiUpload() { document.getElementById('emoji-file').click(); }
 
+// NEW: Bulk Import/Price functions
+function showBulkImportModal() { AdminApp.showBulkImportModal(); }
+function closeBulkImportModal() { AdminApp.closeBulkImportModal(); }
+function showBulkPriceUpdateModal() { AdminApp.showBulkPriceUpdateModal(); }
+function closeBulkPriceUpdateModal() { AdminApp.closeBulkPriceUpdateModal(); }
+
 function previewEmojiFile(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -1734,7 +1930,6 @@ function removeEmojiFile() { document.getElementById('emoji-file').value = ''; d
 function closeUserDetails() { AdminApp.closeUserDetails(); }
 function copyId(elementId) { Utils.copyToClipboard(document.getElementById(elementId).textContent); }
 
-// Toggle checker config visibility
 function toggleCheckerConfig() {
     const enabled = document.getElementById('checker-enabled').checked;
     document.getElementById('checker-json-section').classList.toggle('hidden', !enabled);
@@ -1745,16 +1940,12 @@ function toggleCheckerConfig() {
     }
 }
 
-// NEW: Preview JSON config on input
 function onCheckerJsonInput() {
     AdminApp.previewCheckerConfig();
     AdminApp.updateTestInputs();
 }
 
-// NEW: Load sample config
 function loadSampleConfig(type) { AdminApp.loadSampleConfig(type); }
-
-// NEW: Test checker
 function testChecker() { AdminApp.testChecker(); }
 
 // Upload triggers
@@ -1785,23 +1976,19 @@ const G2BulkAPI = window.G2BulkAPI || {
 };
 window.G2BulkAPI = G2BulkAPI;
 
-// GameIdChecker for admin panel
+// GameIdChecker
 const GameIdChecker = window.GameIdChecker || {
     async check(config, value, allInputValues = {}) {
         if (!config) return null;
-        if (typeof config === 'string') {
-            try { config = JSON.parse(config); } catch(e) { return null; }
-        }
+        if (typeof config === 'string') { try { config = JSON.parse(config); } catch(e) { return null; } }
         const url = config.url || config.apiUrl;
         if (!url) return null;
         const method = (config.method || 'POST').toUpperCase();
         const headers = config.headers || { 'Content-Type': 'application/json' };
-        
         try {
             let fetchUrl = url;
             let options = { method, headers: { ...headers } };
             const safeEscape = (val) => String(val || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
-            
             if (method === 'POST') {
                 if (config.body) {
                     let bodyStr = JSON.stringify(config.body);
@@ -1821,12 +2008,9 @@ const GameIdChecker = window.GameIdChecker || {
                     fetchUrl = fetchUrl.replace(new RegExp(`\\{\\{${escaped}\\}\\}`, 'g'), encodeURIComponent(val || ''));
                 });
             }
-            
             const response = await fetch(fetchUrl, options);
             const data = await response.json();
-            
             let isValid = false, nickname = null, country = null;
-            
             if (config.responsePath || config.response) {
                 const rp = config.responsePath || config.response;
                 const validValue = rp.valid ? this.getNestedValue(data, rp.valid) : null;
@@ -1838,7 +2022,6 @@ const GameIdChecker = window.GameIdChecker || {
                 const validValue = config.responseValidPath ? this.getNestedValue(data, config.responseValidPath) : null;
                 isValid = validValue !== null && validValue !== undefined ? !!validValue : !!nickname;
             }
-            
             return { valid: isValid, nickname, playerName: nickname, country, raw: data };
         } catch (error) { return { valid: false, nickname: null, playerName: null, country: null, error: error.message }; }
     },
@@ -1854,7 +2037,7 @@ const GameIdChecker = window.GameIdChecker || {
 };
 window.GameIdChecker = GameIdChecker;
 
-// CountryHelper for admin
+// CountryHelper
 const CountryHelper = window.CountryHelper || {
     countries: {
         'AF':'🇦🇫 Afghanistan','AL':'🇦🇱 Albania','DZ':'🇩🇿 Algeria','AD':'🇦🇩 Andorra','AO':'🇦🇴 Angola',
@@ -1880,7 +2063,7 @@ const CountryHelper = window.CountryHelper || {
     getDisplay(code) {
         if (!code) return '';
         code = String(code).toUpperCase().trim();
-        return this.countries[code] || `Ã°Å¸Å’Â ${code}`;
+        return this.countries[code] || `🌐 ${code}`;
     }
 };
 window.CountryHelper = CountryHelper;
