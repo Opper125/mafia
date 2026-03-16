@@ -1,4 +1,6 @@
-// ===== Admin Panel Application - G2Bulk Integrated + Enhanced Game ID Checker + Bulk Operations =====
+// ===== Admin Panel Application - G2Bulk Integrated + Enhanced + imgbb + Realtime Cache =====
+
+const IMGBB_API_KEY = 'd3b0e9fd43ff0eb762987129a2f21e9c';
 
 const AdminApp = {
     state: {
@@ -23,16 +25,46 @@ const AdminApp = {
         g2bulkServicesRaw: [],
         g2bulkBalance: null,
         g2bulkCategories: [],
-        // Bulk Import State
         bulkImportSelectedServices: new Set(),
         bulkImportFilteredServices: [],
         bulkImportIconBase64: null,
-        // Bulk Price Update State
         bulkPriceSelectedProducts: new Set(),
-        // Products page selection
-        selectedProductIds: new Set()
+        selectedProductIds: new Set(),
+        // Cache & Realtime
+        dataLoaded: false,
+        lastFetchTime: {},
+        isFetching: false,
+        realtimeInterval: null,
+        fastPollInterval: null
     },
-    
+
+    // ===== IMGBB UPLOAD HELPER =====
+    async uploadToImgbb(file) {
+        const formData = new FormData();
+        formData.append('image', file);
+        const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+            method: 'POST',
+            body: formData
+        });
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error?.message || 'Image upload failed');
+        return result.data.url;
+    },
+
+    async uploadBase64ToImgbb(base64Data) {
+        const base64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+        const formData = new FormData();
+        formData.append('image', base64);
+        const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+            method: 'POST',
+            body: formData
+        });
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error?.message || 'Image upload failed');
+        return result.data.url;
+    },
+
+    // ===== INIT =====
     async init() {
         console.log('🚀 Initializing Admin Panel...');
         try {
@@ -47,6 +79,7 @@ const AdminApp = {
             }
             Utils.showLoading('Loading admin panel...');
             await this.loadAdminData();
+            this.state.dataLoaded = true;
             this.showDashboard();
             TelegramApp.ready();
             Utils.hideLoading();
@@ -57,14 +90,14 @@ const AdminApp = {
             Utils.showToast('Failed to initialize: ' + error.message, 'error');
         }
     },
-    
+
     showAccessDenied(message) {
         document.getElementById('admin-dashboard').classList.add('hidden');
         const denied = document.getElementById('access-denied');
         denied.querySelector('p').textContent = message;
         denied.classList.remove('hidden');
     },
-    
+
     showDashboard() {
         document.getElementById('access-denied').classList.add('hidden');
         document.getElementById('admin-dashboard').classList.remove('hidden');
@@ -72,41 +105,105 @@ const AdminApp = {
         this.startRealtimeUpdates();
         this.updateTime();
     },
-    
-    async loadAdminData() {
+
+    // ===== CACHED DATA LOADING =====
+    async loadAdminData(forceRefresh = false) {
+        if (this.state.isFetching && !forceRefresh) return;
+        this.state.isFetching = true;
         try {
-            const results = await Promise.allSettled([
-                Database.getSettings(),
-                Database.getUsers(),
-                Database.getOrders(),
-                Database.getTopups(),
-                Database.getCategories(),
-                Database.getProducts(),
-                Database.getBanners(),
-                Database.getPaymentMethods(),
-                Database.getInputTables(),
-                Database.getBannedUsers(),
-                Database.getStats()
-            ]);
-            this.state.settings = results[0].status === 'fulfilled' ? results[0].value : {};
-            this.state.users = results[1].status === 'fulfilled' ? results[1].value : [];
-            this.state.orders = results[2].status === 'fulfilled' ? results[2].value : [];
-            this.state.topups = results[3].status === 'fulfilled' ? results[3].value : [];
-            this.state.categories = results[4].status === 'fulfilled' ? results[4].value : [];
-            this.state.products = results[5].status === 'fulfilled' ? results[5].value : [];
-            this.state.banners = results[6].status === 'fulfilled' ? results[6].value : { type1: [], type2: [] };
-            this.state.payments = results[7].status === 'fulfilled' ? results[7].value : [];
-            this.state.inputTables = results[8].status === 'fulfilled' ? results[8].value : [];
-            this.state.bannedUsers = results[9].status === 'fulfilled' ? results[9].value : [];
-            this.state.customEmojis = this.state.settings?.customEmojis || [];
-            this.state.stats = results[10].status === 'fulfilled' ? results[10].value : {};
+            const now = Date.now();
+            const fetchPromises = [];
+            const keys = ['settings','users','orders','topups','categories','products','banners','payments','inputTables','bannedUsers','stats'];
+            const fetchers = [
+                Database.getSettings,
+                Database.getUsers,
+                Database.getOrders,
+                Database.getTopups,
+                Database.getCategories,
+                Database.getProducts,
+                Database.getBanners,
+                Database.getPaymentMethods,
+                Database.getInputTables,
+                Database.getBannedUsers,
+                Database.getStats
+            ];
+            const cacheTime = forceRefresh ? 0 : 10000;
+
+            for (let i = 0; i < keys.length; i++) {
+                const lastTime = this.state.lastFetchTime[keys[i]] || 0;
+                if (now - lastTime > cacheTime || !this.state.dataLoaded) {
+                    fetchPromises.push(
+                        fetchers[i]().then(data => {
+                            this.state.lastFetchTime[keys[i]] = Date.now();
+                            return { key: keys[i], data };
+                        }).catch(err => {
+                            console.warn(`Failed to fetch ${keys[i]}:`, err);
+                            return { key: keys[i], data: null };
+                        })
+                    );
+                }
+            }
+
+            if (fetchPromises.length > 0) {
+                const results = await Promise.all(fetchPromises);
+                results.forEach(({ key, data }) => {
+                    if (data === null) return;
+                    switch (key) {
+                        case 'settings': this.state.settings = data || {}; this.state.customEmojis = data?.customEmojis || []; break;
+                        case 'users': this.state.users = data || []; break;
+                        case 'orders': this.state.orders = data || []; break;
+                        case 'topups': this.state.topups = data || []; break;
+                        case 'categories': this.state.categories = data || []; break;
+                        case 'products': this.state.products = data || []; break;
+                        case 'banners': this.state.banners = data || { type1: [], type2: [] }; break;
+                        case 'payments': this.state.payments = data || []; break;
+                        case 'inputTables': this.state.inputTables = data || []; break;
+                        case 'bannedUsers': this.state.bannedUsers = data || []; break;
+                        case 'stats': this.state.stats = data || {}; break;
+                    }
+                });
+            }
             this.updateSidebarCounts();
         } catch (error) {
             console.error('Load admin data error:', error);
-            throw error;
+        } finally {
+            this.state.isFetching = false;
         }
     },
-    
+
+    // Fast refresh for critical data only
+    async refreshCriticalData() {
+        try {
+            const [orders, topups, users] = await Promise.all([
+                Database.getOrders().catch(() => null),
+                Database.getTopups().catch(() => null),
+                Database.getUsers().catch(() => null)
+            ]);
+            let changed = false;
+            if (orders && JSON.stringify(orders) !== JSON.stringify(this.state.orders)) {
+                this.state.orders = orders;
+                this.state.lastFetchTime.orders = Date.now();
+                changed = true;
+            }
+            if (topups && JSON.stringify(topups) !== JSON.stringify(this.state.topups)) {
+                this.state.topups = topups;
+                this.state.lastFetchTime.topups = Date.now();
+                changed = true;
+            }
+            if (users && JSON.stringify(users) !== JSON.stringify(this.state.users)) {
+                this.state.users = users;
+                this.state.lastFetchTime.users = Date.now();
+                changed = true;
+            }
+            if (changed) {
+                this.updateSidebarCounts();
+                this.renderCurrentPage();
+            }
+        } catch (e) {
+            console.warn('Critical data refresh error:', e);
+        }
+    },
+
     updateSidebarCounts() {
         const usersCount = document.getElementById('users-count');
         const pendingOrders = document.getElementById('pending-orders');
@@ -118,7 +215,7 @@ const AdminApp = {
         }
         if (pendingTopups) pendingTopups.textContent = this.state.topups.filter(t => t.status === 'pending').length;
     },
-    
+
     updateTime() {
         const update = () => {
             const el = document.getElementById('admin-time');
@@ -127,16 +224,22 @@ const AdminApp = {
         update();
         setInterval(update, 1000);
     },
-    
+
     startRealtimeUpdates() {
-        setInterval(async () => {
-            try {
-                await this.loadAdminData();
-                this.renderCurrentPage();
-            } catch (error) {}
-        }, 30000);
+        if (this.state.realtimeInterval) clearInterval(this.state.realtimeInterval);
+        if (this.state.fastPollInterval) clearInterval(this.state.fastPollInterval);
+
+        // Fast poll for orders/topups/users every 10 seconds
+        this.state.fastPollInterval = setInterval(() => {
+            this.refreshCriticalData();
+        }, 10000);
+
+        // Full data refresh every 60 seconds
+        this.state.realtimeInterval = setInterval(() => {
+            this.loadAdminData(true).then(() => this.renderCurrentPage());
+        }, 60000);
     },
-    
+
     showAdminPage(page) {
         this.state.currentPage = page;
         document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
@@ -149,7 +252,7 @@ const AdminApp = {
             this.renderCurrentPage();
         }
     },
-    
+
     renderCurrentPage() {
         switch (this.state.currentPage) {
             case 'dashboard': this.renderDashboard(); break;
@@ -169,7 +272,7 @@ const AdminApp = {
             case 'database': this.renderDatabaseIds(); break;
         }
     },
-    
+
     // ===== DASHBOARD =====
     renderDashboard() {
         document.getElementById('stat-users').textContent = this.state.stats.totalUsers || this.state.users.length || 0;
@@ -183,7 +286,7 @@ const AdminApp = {
         this.renderRecentOrders();
         this.renderRecentTopups();
     },
-    
+
     async refreshApiBalance() {
         try {
             const result = await G2BulkAPI.getBalance();
@@ -201,7 +304,7 @@ const AdminApp = {
             if (displayEl) displayEl.textContent = 'Error loading';
         }
     },
-    
+
     renderRecentOrders() {
         const container = document.getElementById('recent-orders');
         if (!container) return;
@@ -219,7 +322,7 @@ const AdminApp = {
             </div>`;
         }).join('');
     },
-    
+
     renderRecentTopups() {
         const container = document.getElementById('recent-topups');
         if (!container) return;
@@ -234,11 +337,11 @@ const AdminApp = {
             </div>`;
         }).join('');
     },
-    
+
     getAvatar(id) {
         return `https://ui-avatars.com/api/?name=${id}&background=8b5cf6&color=fff&size=100`;
     },
-    
+
     // ===== USERS =====
     renderUsers() {
         const tbody = document.getElementById('users-table-body');
@@ -258,7 +361,7 @@ const AdminApp = {
             </div></td>
         </tr>`).join('');
     },
-    
+
     async viewUserDetails(telegramId) {
         const user = this.state.users.find(u => u.telegramId === telegramId);
         if (!user) return;
@@ -269,7 +372,7 @@ const AdminApp = {
         <div class="user-actions-row"><button class="btn btn-primary" onclick="AdminApp.editUserBalance('${user.telegramId}')"><i class="fas fa-wallet"></i> Edit Balance</button><button class="btn btn-danger" onclick="AdminApp.banUserPrompt('${user.telegramId}')"><i class="fas fa-ban"></i> Ban User</button></div>`;
         document.getElementById('user-details-modal').classList.remove('hidden');
     },
-    
+
     async editUserBalance(telegramId) {
         const user = this.state.users.find(u => u.telegramId === telegramId);
         if (!user) return;
@@ -278,7 +381,7 @@ const AdminApp = {
             Utils.showLoading('Updating balance...');
             try {
                 await Database.updateUserBalance(telegramId, parseFloat(newBalance), 'set');
-                await this.loadAdminData();
+                user.balance = parseFloat(newBalance);
                 this.renderUsers();
                 this.closeUserDetails();
                 Utils.showToast('Balance updated!', 'success');
@@ -286,7 +389,7 @@ const AdminApp = {
             finally { Utils.hideLoading(); }
         }
     },
-    
+
     async banUserPrompt(telegramId) {
         if (confirm('Are you sure you want to ban this user?')) {
             const reason = prompt('Enter ban reason:') || 'Violated terms of service';
@@ -295,7 +398,9 @@ const AdminApp = {
                 const user = this.state.users.find(u => u.telegramId === telegramId);
                 await Database.banUser(user, reason);
                 await TelegramBot.notifyBan(telegramId, reason);
-                await this.loadAdminData();
+                this.state.users = this.state.users.filter(u => u.telegramId !== telegramId);
+                this.state.bannedUsers.push({ ...user, reason, bannedAt: new Date().toISOString() });
+                this.updateSidebarCounts();
                 this.renderUsers();
                 this.closeUserDetails();
                 Utils.showToast('User banned', 'success');
@@ -303,9 +408,9 @@ const AdminApp = {
             finally { Utils.hideLoading(); }
         }
     },
-    
+
     closeUserDetails() { document.getElementById('user-details-modal').classList.add('hidden'); },
-    
+
     // ===== ORDERS =====
     renderOrders() {
         const container = document.getElementById('admin-orders-list');
@@ -357,38 +462,44 @@ const AdminApp = {
             </div>`;
         }).join('');
     },
-    
+
     filterOrders(filter) {
         this.state.ordersFilter = filter;
         document.querySelectorAll('#admin-page-orders .filter-btn').forEach(b => b.classList.remove('active'));
         event.target.classList.add('active');
         this.renderOrders();
     },
-    
+
     async approveOrder(orderId) {
         if (!confirm('Approve this order?')) return;
         Utils.showLoading('Approving...');
         try {
             const order = await Database.updateOrderStatus(orderId, 'approved', CONFIG.ADMIN_TELEGRAM_ID);
             await TelegramBot.notifyOrderStatus(order, 'approved');
-            await this.loadAdminData(); this.renderOrders();
+            const idx = this.state.orders.findIndex(o => o.id === orderId);
+            if (idx !== -1) this.state.orders[idx] = { ...this.state.orders[idx], status: 'approved' };
+            this.updateSidebarCounts();
+            this.renderOrders();
             Utils.showToast('Order approved!', 'success');
         } catch (error) { Utils.showToast('Failed to approve', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     async rejectOrder(orderId) {
         if (!confirm('Reject this order? Amount will be refunded.')) return;
         Utils.showLoading('Rejecting...');
         try {
             const order = await Database.updateOrderStatus(orderId, 'rejected', CONFIG.ADMIN_TELEGRAM_ID);
             await TelegramBot.notifyOrderStatus(order, 'rejected');
-            await this.loadAdminData(); this.renderOrders();
+            const idx = this.state.orders.findIndex(o => o.id === orderId);
+            if (idx !== -1) this.state.orders[idx] = { ...this.state.orders[idx], status: 'rejected' };
+            this.updateSidebarCounts();
+            this.renderOrders();
             Utils.showToast('Order rejected & refunded', 'success');
         } catch (error) { Utils.showToast('Failed to reject', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     async checkOrderApiStatus(orderId) {
         const order = this.state.orders.find(o => o.id === orderId);
         if (!order || !order.apiOrderId) return;
@@ -402,7 +513,10 @@ const AdminApp = {
                 else if (apiStatus === 'Canceled' || apiStatus === 'Refunded') newStatus = 'failed';
                 else if (apiStatus === 'Partial') newStatus = 'partial';
                 await Database.updateOrderApiStatus(order.id, { apiStatus, status: newStatus, apiCharge: result.charge || null });
-                await this.loadAdminData(); this.renderOrders();
+                const idx = this.state.orders.findIndex(o => o.id === orderId);
+                if (idx !== -1) Object.assign(this.state.orders[idx], { apiStatus, status: newStatus });
+                this.updateSidebarCounts();
+                this.renderOrders();
                 Utils.showToast(`API Status: ${apiStatus}`, 'success');
             } else {
                 Utils.showToast('API Error: ' + (result?.error || 'Unknown'), 'error');
@@ -410,7 +524,7 @@ const AdminApp = {
         } catch (error) { Utils.showToast('Failed to check status', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     async retryQueuedOrder(orderId) {
         const order = this.state.orders.find(o => o.id === orderId);
         if (!order) return;
@@ -419,26 +533,32 @@ const AdminApp = {
             const apiResult = await G2BulkAPI.placeOrder(order.serviceId, order.link, 1);
             if (apiResult && apiResult.order) {
                 await Database.updateOrderApiStatus(order.id, { apiOrderId: apiResult.order, apiStatus: 'Processing', status: 'processing', apiError: null });
+                const idx = this.state.orders.findIndex(o => o.id === orderId);
+                if (idx !== -1) Object.assign(this.state.orders[idx], { apiOrderId: apiResult.order, apiStatus: 'Processing', status: 'processing', apiError: null });
                 Utils.showToast('✅ Order is now processing!', 'success');
             } else {
                 Utils.showToast('❌ Retry failed: ' + (apiResult?.error || 'Unknown'), 'error');
             }
-            await this.loadAdminData(); this.renderOrders();
+            this.updateSidebarCounts();
+            this.renderOrders();
         } catch (error) { Utils.showToast('Failed to retry', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     async cancelQueuedOrder(orderId) {
         if (!confirm('Cancel this order and refund the user?')) return;
         Utils.showLoading('Canceling...');
         try {
             await Database.updateOrderApiStatus(orderId, { apiStatus: 'Canceled', status: 'failed', apiError: 'Canceled by admin' });
-            await this.loadAdminData(); this.renderOrders();
+            const idx = this.state.orders.findIndex(o => o.id === orderId);
+            if (idx !== -1) Object.assign(this.state.orders[idx], { apiStatus: 'Canceled', status: 'failed', apiError: 'Canceled by admin' });
+            this.updateSidebarCounts();
+            this.renderOrders();
             Utils.showToast('Order canceled & refunded', 'success');
         } catch (error) { Utils.showToast('Failed to cancel', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     // ===== TOPUPS =====
     renderTopups() {
         const container = document.getElementById('admin-topups-list');
@@ -455,46 +575,52 @@ const AdminApp = {
             ${topup.status === 'pending' ? `<div class="topup-actions"><button class="btn btn-success" onclick="AdminApp.approveTopup('${topup.id}')"><i class="fas fa-check"></i> Approve</button><button class="btn btn-danger" onclick="AdminApp.rejectTopup('${topup.id}')"><i class="fas fa-times"></i> Reject</button></div>` : ''}</div>`;
         }).join('');
     },
-    
+
     filterTopups(filter) {
         this.state.topupsFilter = filter;
         document.querySelectorAll('#admin-page-topups .filter-btn').forEach(b => b.classList.remove('active'));
         event.target.classList.add('active');
         this.renderTopups();
     },
-    
+
     async approveTopup(topupId) {
         if (!confirm('Approve this top-up?')) return;
         Utils.showLoading('Approving...');
         try {
             const topup = await Database.updateTopupStatus(topupId, 'approved', CONFIG.ADMIN_TELEGRAM_ID);
             await TelegramBot.notifyTopupStatus(topup, 'approved');
-            await this.loadAdminData(); this.renderTopups();
+            const idx = this.state.topups.findIndex(t => t.id === topupId);
+            if (idx !== -1) this.state.topups[idx] = { ...this.state.topups[idx], status: 'approved' };
+            this.updateSidebarCounts();
+            this.renderTopups();
             Utils.showToast('Top-up approved!', 'success');
         } catch (error) { Utils.showToast('Failed to approve', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     async rejectTopup(topupId) {
         if (!confirm('Reject this top-up?')) return;
         Utils.showLoading('Rejecting...');
         try {
             const topup = await Database.updateTopupStatus(topupId, 'rejected', CONFIG.ADMIN_TELEGRAM_ID);
             await TelegramBot.notifyTopupStatus(topup, 'rejected');
-            await this.loadAdminData(); this.renderTopups();
+            const idx = this.state.topups.findIndex(t => t.id === topupId);
+            if (idx !== -1) this.state.topups[idx] = { ...this.state.topups[idx], status: 'rejected' };
+            this.updateSidebarCounts();
+            this.renderTopups();
             Utils.showToast('Top-up rejected', 'success');
         } catch (error) { Utils.showToast('Failed to reject', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
-    // ===== CATEGORIES =====
+
+    // ===== CATEGORIES (imgbb upload) =====
     renderCategories() {
         const container = document.getElementById('admin-categories-list');
         if (!container) return;
         if (this.state.categories.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fas fa-th-large"></i><p>No categories yet</p></div>'; return; }
         container.innerHTML = this.state.categories.map(cat => `<div class="category-card"><div class="category-icon"><img src="${cat.icon}" alt="${cat.name}">${cat.flag ? `<span class="category-flag">${cat.flag}</span>` : ''}</div><div class="category-info"><h4>${cat.name}</h4><p>${cat.totalSold || 0} sold</p>${cat.hasDiscount ? '<span class="discount-badge">Has Discount</span>' : ''}</div><div class="category-actions"><button class="action-btn edit" onclick="AdminApp.editCategory('${cat.id}')"><i class="fas fa-edit"></i></button><button class="action-btn delete" onclick="AdminApp.deleteCategory('${cat.id}')"><i class="fas fa-trash"></i></button></div></div>`).join('');
     },
-    
+
     showAddCategory() {
         this.state.editingItem = null;
         document.getElementById('category-name').value = '';
@@ -505,7 +631,7 @@ const AdminApp = {
         document.getElementById('category-icon-preview').classList.add('hidden');
         document.getElementById('add-category-modal').classList.remove('hidden');
     },
-    
+
     editCategory(categoryId) {
         const cat = this.state.categories.find(c => c.id === categoryId);
         if (!cat) return;
@@ -516,9 +642,9 @@ const AdminApp = {
         if (cat.icon) { document.getElementById('category-icon-preview').innerHTML = `<img src="${cat.icon}" alt="Icon">`; document.getElementById('category-icon-preview').classList.remove('hidden'); }
         document.getElementById('add-category-modal').classList.remove('hidden');
     },
-    
+
     closeAddCategory() { document.getElementById('add-category-modal').classList.add('hidden'); this.state.editingItem = null; },
-    
+
     async saveCategory() {
         const name = document.getElementById('category-name').value.trim();
         const flag = document.getElementById('category-flag').value;
@@ -528,58 +654,64 @@ const AdminApp = {
         Utils.showLoading('Saving...');
         try {
             let icon = this.state.editingItem?.icon || '';
-            if (iconInput.files[0]) icon = await Utils.compressImage(iconInput.files[0], 200, 0.8);
+            if (iconInput.files[0]) {
+                icon = await this.uploadToImgbb(iconInput.files[0]);
+            }
             if (!icon && !this.state.editingItem) { Utils.showToast('Please upload icon', 'warning'); Utils.hideLoading(); return; }
             const data = { name, flag, hasDiscount, icon };
-            if (this.state.editingItem) { await Database.updateCategory(this.state.editingItem.id, data); Utils.showToast('Category updated!', 'success'); }
-            else { await Database.createCategory(data); Utils.showToast('Category created!', 'success'); }
-            await this.loadAdminData(); this.renderCategories(); this.closeAddCategory();
-        } catch (error) { Utils.showToast('Failed to save', 'error'); }
+            if (this.state.editingItem) {
+                await Database.updateCategory(this.state.editingItem.id, data);
+                const idx = this.state.categories.findIndex(c => c.id === this.state.editingItem.id);
+                if (idx !== -1) Object.assign(this.state.categories[idx], data);
+                Utils.showToast('Category updated!', 'success');
+            } else {
+                const newCat = await Database.createCategory(data);
+                if (newCat) this.state.categories.push(newCat);
+                Utils.showToast('Category created!', 'success');
+            }
+            this.renderCategories();
+            this.closeAddCategory();
+        } catch (error) { Utils.showToast('Failed to save: ' + error.message, 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     async deleteCategory(categoryId) {
         if (!confirm('Delete this category? All products will also be deleted.')) return;
         Utils.showLoading('Deleting...');
-        try { await Database.deleteCategory(categoryId); await this.loadAdminData(); this.renderCategories(); Utils.showToast('Category deleted!', 'success'); }
-        catch (error) { Utils.showToast('Failed to delete', 'error'); }
+        try {
+            await Database.deleteCategory(categoryId);
+            this.state.categories = this.state.categories.filter(c => c.id !== categoryId);
+            this.state.products = this.state.products.filter(p => p.categoryId !== categoryId);
+            this.renderCategories();
+            Utils.showToast('Category deleted!', 'success');
+        } catch (error) { Utils.showToast('Failed to delete', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
-    // ===== PRODUCTS (UPDATED - with select/bulk delete) =====
+
+    // ===== PRODUCTS (with select/bulk delete) =====
     renderProducts() {
         const container = document.getElementById('admin-products-list');
         const filterSelect = document.getElementById('filter-category');
         if (!container) return;
-        
+
         if (filterSelect) {
             const val = filterSelect.value;
             filterSelect.innerHTML = '<option value="all">All Categories</option>' + this.state.categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
             filterSelect.value = val || 'all';
         }
-        
+
         let filtered = [...this.state.products];
         if (filterSelect && filterSelect.value !== 'all') filtered = filtered.filter(p => p.categoryId === filterSelect.value);
-        
-        // Show/hide bulk actions bar
+
         const bulkBar = document.getElementById('bulk-actions-bar');
-        if (bulkBar) {
-            if (filtered.length > 0) {
-                bulkBar.classList.remove('hidden');
-            } else {
-                bulkBar.classList.add('hidden');
-            }
-        }
-        
-        // Update select all checkbox
+        if (bulkBar) bulkBar.classList.toggle('hidden', filtered.length === 0);
+
         const selectAllCb = document.getElementById('select-all-products');
-        if (selectAllCb) {
-            selectAllCb.checked = filtered.length > 0 && filtered.every(p => this.state.selectedProductIds.has(p.id));
-        }
+        if (selectAllCb) selectAllCb.checked = filtered.length > 0 && filtered.every(p => this.state.selectedProductIds.has(p.id));
         this.updateSelectedProductsCount();
-        
+
         if (filtered.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fas fa-box"></i><p>No products yet</p></div>'; return; }
-        
+
         container.innerHTML = filtered.map(product => {
             const cat = this.state.categories.find(c => c.id === product.categoryId);
             const isSelected = this.state.selectedProductIds.has(product.id);
@@ -602,57 +734,46 @@ const AdminApp = {
             </div>`;
         }).join('');
     },
-    
+
     toggleProductSelect(productId) {
-        if (this.state.selectedProductIds.has(productId)) {
-            this.state.selectedProductIds.delete(productId);
-        } else {
-            this.state.selectedProductIds.add(productId);
-        }
+        if (this.state.selectedProductIds.has(productId)) this.state.selectedProductIds.delete(productId);
+        else this.state.selectedProductIds.add(productId);
         this.renderProducts();
     },
-    
+
     toggleSelectAllProducts() {
         const filterSelect = document.getElementById('filter-category');
         let filtered = [...this.state.products];
         if (filterSelect && filterSelect.value !== 'all') filtered = filtered.filter(p => p.categoryId === filterSelect.value);
-        
         const selectAllCb = document.getElementById('select-all-products');
-        if (selectAllCb && selectAllCb.checked) {
-            filtered.forEach(p => this.state.selectedProductIds.add(p.id));
-        } else {
-            filtered.forEach(p => this.state.selectedProductIds.delete(p.id));
-        }
+        if (selectAllCb && selectAllCb.checked) filtered.forEach(p => this.state.selectedProductIds.add(p.id));
+        else filtered.forEach(p => this.state.selectedProductIds.delete(p.id));
         this.renderProducts();
     },
-    
+
     updateSelectedProductsCount() {
         const countEl = document.getElementById('selected-products-count');
         if (countEl) countEl.textContent = `${this.state.selectedProductIds.size} selected`;
     },
-    
+
     async bulkDeleteProducts() {
         const count = this.state.selectedProductIds.size;
         if (count === 0) { Utils.showToast('No products selected', 'warning'); return; }
         if (!confirm(`Delete ${count} selected product(s)? This cannot be undone.`)) return;
-        
         Utils.showLoading(`Deleting ${count} products...`);
         try {
             const idsToDelete = [...this.state.selectedProductIds];
             for (const id of idsToDelete) {
                 await Database.deleteProduct(id);
             }
+            this.state.products = this.state.products.filter(p => !idsToDelete.includes(p.id));
             this.state.selectedProductIds.clear();
-            await this.loadAdminData();
             this.renderProducts();
             Utils.showToast(`${count} products deleted!`, 'success');
-        } catch (error) {
-            Utils.showToast('Failed to delete some products: ' + error.message, 'error');
-        } finally {
-            Utils.hideLoading();
-        }
+        } catch (error) { Utils.showToast('Failed to delete: ' + error.message, 'error'); }
+        finally { Utils.hideLoading(); }
     },
-    
+
     showAddProduct() {
         this.state.editingItem = null;
         document.getElementById('product-modal-title').textContent = 'Add Product';
@@ -672,7 +793,7 @@ const AdminApp = {
         document.getElementById('service-lookup-result').classList.add('hidden');
         document.getElementById('add-product-modal').classList.remove('hidden');
     },
-    
+
     editProduct(productId) {
         const product = this.state.products.find(p => p.id === productId);
         if (!product) return;
@@ -691,9 +812,9 @@ const AdminApp = {
         if (product.icon) { document.getElementById('product-icon-preview').innerHTML = `<img src="${product.icon}" alt="Icon">`; document.getElementById('product-icon-preview').classList.remove('hidden'); }
         document.getElementById('add-product-modal').classList.remove('hidden');
     },
-    
+
     closeAddProduct() { document.getElementById('add-product-modal').classList.add('hidden'); this.state.editingItem = null; },
-    
+
     async lookupServiceId() {
         const serviceId = document.getElementById('product-service-id').value;
         if (!serviceId) { Utils.showToast('Enter a Service ID first', 'warning'); return; }
@@ -722,7 +843,7 @@ const AdminApp = {
             resultDiv.className = 'service-lookup-result error';
         }
     },
-    
+
     async openG2BulkServiceBrowser() {
         document.getElementById('g2bulk-browser-modal').classList.remove('hidden');
         if (this.state.g2bulkServicesRaw.length === 0) {
@@ -737,9 +858,9 @@ const AdminApp = {
         }
         this.renderBrowserServices(this.state.g2bulkServicesRaw.slice(0, 50));
     },
-    
+
     closeG2BulkBrowser() { document.getElementById('g2bulk-browser-modal').classList.add('hidden'); },
-    
+
     renderBrowserServices(services) {
         const container = document.getElementById('g2bulk-browser-list');
         if (services.length === 0) { container.innerHTML = '<p>No services found</p>'; return; }
@@ -751,7 +872,7 @@ const AdminApp = {
             </div>
         `).join('');
     },
-    
+
     filterBrowserServices() {
         const query = document.getElementById('g2bulk-browser-search').value.toLowerCase();
         const filtered = this.state.g2bulkServicesRaw.filter(s =>
@@ -759,7 +880,7 @@ const AdminApp = {
         );
         this.renderBrowserServices(filtered);
     },
-    
+
     selectBrowserService(serviceId) {
         const service = this.state.g2bulkServicesRaw.find(s => s.service === serviceId);
         if (!service) return;
@@ -771,7 +892,7 @@ const AdminApp = {
         this.closeG2BulkBrowser();
         Utils.showToast(`Selected: #${service.service} - ${service.name}`, 'success');
     },
-    
+
     async saveProduct() {
         const categoryId = document.getElementById('product-category').value;
         const name = document.getElementById('product-name').value.trim();
@@ -789,12 +910,7 @@ const AdminApp = {
         try {
             let icon = this.state.editingItem?.icon || '';
             if (iconInput.files[0]) {
-                const formData = new FormData();
-                formData.append('image', iconInput.files[0]);
-                const response = await fetch(`https://api.imgbb.com/1/upload?key=d3b0e9fd43ff0eb762987129a2f21e9c`, { method: 'POST', body: formData });
-                const result = await response.json();
-                if (!result.success) throw new Error(result.error?.message || 'Icon upload failed');
-                icon = result.data.url;
+                icon = await this.uploadToImgbb(iconInput.files[0]);
             }
             if (!icon && !this.state.editingItem) { Utils.showToast('Please upload icon', 'warning'); Utils.hideLoading(); return; }
             let g2bulkServiceName = '';
@@ -810,38 +926,47 @@ const AdminApp = {
                 g2bulkMax: g2bulkMax ? parseInt(g2bulkMax) : null,
                 g2bulkServiceName: g2bulkServiceName
             };
-            if (this.state.editingItem) { await Database.updateProduct(this.state.editingItem.id, data); Utils.showToast('Product updated!', 'success'); }
-            else { await Database.createProduct(data); Utils.showToast('Product created!', 'success'); }
-            await this.loadAdminData(); this.renderProducts(); this.closeAddProduct();
+            if (this.state.editingItem) {
+                await Database.updateProduct(this.state.editingItem.id, data);
+                const idx = this.state.products.findIndex(p => p.id === this.state.editingItem.id);
+                if (idx !== -1) Object.assign(this.state.products[idx], data);
+                Utils.showToast('Product updated!', 'success');
+            } else {
+                const newProduct = await Database.createProduct(data);
+                if (newProduct) this.state.products.push(newProduct);
+                Utils.showToast('Product created!', 'success');
+            }
+            this.renderProducts();
+            this.closeAddProduct();
         } catch (error) { Utils.showToast('Failed to save: ' + error.message, 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     async deleteProduct(productId) {
         if (!confirm('Delete this product?')) return;
         Utils.showLoading('Deleting...');
-        try { await Database.deleteProduct(productId); await this.loadAdminData(); this.renderProducts(); Utils.showToast('Product deleted!', 'success'); }
-        catch (error) { Utils.showToast('Failed to delete', 'error'); }
+        try {
+            await Database.deleteProduct(productId);
+            this.state.products = this.state.products.filter(p => p.id !== productId);
+            this.state.selectedProductIds.delete(productId);
+            this.renderProducts();
+            Utils.showToast('Product deleted!', 'success');
+        } catch (error) { Utils.showToast('Failed to delete', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     // ===== BULK IMPORT FROM G2BULK =====
-    
+
     showBulkImportModal() {
         this.state.bulkImportSelectedServices = new Set();
         this.state.bulkImportFilteredServices = [];
         this.state.bulkImportIconBase64 = null;
-        
-        // Populate category select
         const catSelect = document.getElementById('bulk-import-category');
         catSelect.innerHTML = '<option value="">-- Select Category --</option>' + this.state.categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-        
-        // Populate g2bulk category filter
         const g2catSelect = document.getElementById('bulk-import-g2bulk-category');
         if (this.state.g2bulkCategories.length > 0) {
             g2catSelect.innerHTML = '<option value="all">All G2Bulk Categories</option>' + this.state.g2bulkCategories.map(c => `<option value="${c}">${c}</option>`).join('');
         }
-        
         document.getElementById('bulk-import-search').value = '';
         document.getElementById('bulk-import-select-all').checked = false;
         document.getElementById('bulk-import-selected-count').textContent = '0 selected';
@@ -853,18 +978,13 @@ const AdminApp = {
         document.getElementById('bulk-import-preview').innerHTML = '<div class="empty-state small"><p>Select products above to see price preview</p></div>';
         document.getElementById('bulk-import-save-btn').disabled = true;
         document.getElementById('bulk-import-save-count').textContent = '0';
-        
         document.getElementById('bulk-import-modal').classList.remove('hidden');
     },
-    
-    closeBulkImportModal() {
-        document.getElementById('bulk-import-modal').classList.add('hidden');
-    },
-    
-    onBulkImportCategoryChange() {
-        // Just track the selected category
-    },
-    
+
+    closeBulkImportModal() { document.getElementById('bulk-import-modal').classList.add('hidden'); },
+
+    onBulkImportCategoryChange() {},
+
     async loadBulkImportServices() {
         if (this.state.g2bulkServicesRaw.length === 0) {
             Utils.showLoading('Loading G2Bulk services...');
@@ -884,19 +1004,17 @@ const AdminApp = {
         }
         this.filterBulkImportServices();
     },
-    
+
     filterBulkImportServices() {
         const query = (document.getElementById('bulk-import-search')?.value || '').toLowerCase();
         const catFilter = document.getElementById('bulk-import-g2bulk-category')?.value || 'all';
-        
         let filtered = [...this.state.g2bulkServicesRaw];
         if (catFilter !== 'all') filtered = filtered.filter(s => s.category === catFilter);
         if (query) filtered = filtered.filter(s => s.name.toLowerCase().includes(query) || String(s.service).includes(query) || (s.category && s.category.toLowerCase().includes(query)));
-        
         this.state.bulkImportFilteredServices = filtered;
         this.renderBulkImportServicesList(filtered);
     },
-    
+
     renderBulkImportServicesList(services) {
         const container = document.getElementById('bulk-import-services-list');
         if (services.length === 0) {
@@ -905,203 +1023,111 @@ const AdminApp = {
         }
         const display = services.slice(0, 200);
         const rate = parseFloat(document.getElementById('bulk-import-rate').value) || 4150;
-        
         container.innerHTML = display.map(s => {
             const isSelected = this.state.bulkImportSelectedServices.has(s.service);
             const mmkPrice = Math.ceil(parseFloat(s.rate) * rate);
             return `<div class="bulk-import-service-item ${isSelected ? 'selected' : ''}" onclick="AdminApp.toggleBulkImportService(${s.service})">
-                <div class="bulk-service-checkbox">
-                    <input type="checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation(); AdminApp.toggleBulkImportService(${s.service})">
-                </div>
-                <div class="bulk-service-info">
-                    <div class="bulk-service-name">${s.name}</div>
-                    <div class="bulk-service-details">
-                        <span class="service-id-badge">#${s.service}</span>
-                        <span class="service-category-badge">${s.category || 'N/A'}</span>
-                    </div>
-                </div>
-                <div class="bulk-service-price">
-                    <div class="price-usd">$${s.rate}</div>
-                    <div class="price-mmk">${mmkPrice.toLocaleString()} MMK</div>
-                </div>
+                <div class="bulk-service-checkbox"><input type="checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation(); AdminApp.toggleBulkImportService(${s.service})"></div>
+                <div class="bulk-service-info"><div class="bulk-service-name">${s.name}</div><div class="bulk-service-details"><span class="service-id-badge">#${s.service}</span><span class="service-category-badge">${s.category || 'N/A'}</span></div></div>
+                <div class="bulk-service-price"><div class="price-usd">$${s.rate}</div><div class="price-mmk">${mmkPrice.toLocaleString()} MMK</div></div>
             </div>`;
         }).join('');
-        
-        if (services.length > 200) {
-            container.innerHTML += `<p class="load-more-text">Showing 200 of ${services.length}. Use search to filter.</p>`;
-        }
+        if (services.length > 200) container.innerHTML += `<p class="load-more-text">Showing 200 of ${services.length}. Use search to filter.</p>`;
     },
-    
+
     toggleBulkImportService(serviceId) {
-        if (this.state.bulkImportSelectedServices.has(serviceId)) {
-            this.state.bulkImportSelectedServices.delete(serviceId);
-        } else {
-            this.state.bulkImportSelectedServices.add(serviceId);
-        }
+        if (this.state.bulkImportSelectedServices.has(serviceId)) this.state.bulkImportSelectedServices.delete(serviceId);
+        else this.state.bulkImportSelectedServices.add(serviceId);
         this.updateBulkImportUI();
     },
-    
+
     toggleBulkImportSelectAll() {
         const cb = document.getElementById('bulk-import-select-all');
-        if (cb.checked) {
-            this.state.bulkImportFilteredServices.slice(0, 200).forEach(s => this.state.bulkImportSelectedServices.add(s.service));
-        } else {
-            this.state.bulkImportFilteredServices.slice(0, 200).forEach(s => this.state.bulkImportSelectedServices.delete(s.service));
-        }
+        if (cb.checked) this.state.bulkImportFilteredServices.slice(0, 200).forEach(s => this.state.bulkImportSelectedServices.add(s.service));
+        else this.state.bulkImportFilteredServices.slice(0, 200).forEach(s => this.state.bulkImportSelectedServices.delete(s.service));
         this.updateBulkImportUI();
     },
-    
+
     updateBulkImportUI() {
         const count = this.state.bulkImportSelectedServices.size;
         document.getElementById('bulk-import-selected-count').textContent = `${count} selected`;
         document.getElementById('bulk-import-save-count').textContent = count;
         document.getElementById('bulk-import-save-btn').disabled = count === 0;
-        
-        // Re-render list to update checkboxes
-        if (this.state.bulkImportFilteredServices.length > 0) {
-            this.renderBulkImportServicesList(this.state.bulkImportFilteredServices);
-        }
-        
-        // Update preview
+        if (this.state.bulkImportFilteredServices.length > 0) this.renderBulkImportServicesList(this.state.bulkImportFilteredServices);
         this.renderBulkImportPreview();
     },
-    
+
     recalculateBulkImportPrices() {
-        if (this.state.bulkImportFilteredServices.length > 0) {
-            this.renderBulkImportServicesList(this.state.bulkImportFilteredServices);
-        }
+        if (this.state.bulkImportFilteredServices.length > 0) this.renderBulkImportServicesList(this.state.bulkImportFilteredServices);
         this.renderBulkImportPreview();
     },
-    
+
     renderBulkImportPreview() {
         const previewContainer = document.getElementById('bulk-import-preview');
         const selectedIds = [...this.state.bulkImportSelectedServices];
-        if (selectedIds.length === 0) {
-            previewContainer.innerHTML = '<div class="empty-state small"><p>Select products above to see price preview</p></div>';
-            return;
-        }
-        
+        if (selectedIds.length === 0) { previewContainer.innerHTML = '<div class="empty-state small"><p>Select products above to see price preview</p></div>'; return; }
         const rate = parseFloat(document.getElementById('bulk-import-rate').value) || 4150;
         const selectedServices = selectedIds.map(id => this.state.g2bulkServicesRaw.find(s => s.service === id)).filter(Boolean);
-        
-        previewContainer.innerHTML = `
-            <div class="preview-table">
-                <div class="preview-table-header">
-                    <span class="col-name">Product Name</span>
-                    <span class="col-usd">USD Rate</span>
-                    <span class="col-mmk">MMK Price</span>
-                    <span class="col-service">Service ID</span>
-                </div>
-                ${selectedServices.map(s => {
-                    const mmkPrice = Math.ceil(parseFloat(s.rate) * rate);
-                    return `<div class="preview-table-row">
-                        <span class="col-name">${s.name}</span>
-                        <span class="col-usd">$${s.rate}</span>
-                        <span class="col-mmk">${mmkPrice.toLocaleString()} MMK</span>
-                        <span class="col-service">#${s.service}</span>
-                    </div>`;
-                }).join('')}
-            </div>
-            <div class="preview-summary">
-                <span>Total: ${selectedServices.length} products</span>
-                <span>Exchange Rate: 1 USD = ${rate.toLocaleString()} MMK</span>
-            </div>
-        `;
+        previewContainer.innerHTML = `<div class="preview-table"><div class="preview-table-header"><span class="col-name">Product Name</span><span class="col-usd">USD Rate</span><span class="col-mmk">MMK Price</span><span class="col-service">Service ID</span></div>
+            ${selectedServices.map(s => {
+                const mmkPrice = Math.ceil(parseFloat(s.rate) * rate);
+                return `<div class="preview-table-row"><span class="col-name">${s.name}</span><span class="col-usd">$${s.rate}</span><span class="col-mmk">${mmkPrice.toLocaleString()} MMK</span><span class="col-service">#${s.service}</span></div>`;
+            }).join('')}</div>
+            <div class="preview-summary"><span>Total: ${selectedServices.length} products</span><span>Exchange Rate: 1 USD = ${rate.toLocaleString()} MMK</span></div>`;
     },
-    
+
     previewBulkImportIcon(event) {
         const file = event.target.files[0];
         if (!file) return;
         const preview = document.getElementById('bulk-import-icon-preview');
         const reader = new FileReader();
-        reader.onload = (e) => {
-            preview.innerHTML = `<img src="${e.target.result}" alt="Icon Preview">`;
-            preview.classList.remove('hidden');
-        };
+        reader.onload = (e) => { preview.innerHTML = `<img src="${e.target.result}" alt="Icon Preview">`; preview.classList.remove('hidden'); };
         reader.readAsDataURL(file);
     },
-    
+
     async saveBulkImport() {
         const categoryId = document.getElementById('bulk-import-category').value;
         if (!categoryId) { Utils.showToast('Please select a target category', 'warning'); return; }
-        
         const selectedIds = [...this.state.bulkImportSelectedServices];
         if (selectedIds.length === 0) { Utils.showToast('No products selected', 'warning'); return; }
-        
         const iconInput = document.getElementById('bulk-import-icon');
         if (!iconInput.files[0]) { Utils.showToast('Please upload a product icon', 'warning'); return; }
-        
         const rate = parseFloat(document.getElementById('bulk-import-rate').value);
         if (!rate || rate <= 0) { Utils.showToast('Please enter a valid exchange rate', 'warning'); return; }
-        
         if (!confirm(`Import ${selectedIds.length} products with exchange rate 1 USD = ${rate} MMK?`)) return;
-        
+
         Utils.showLoading(`Importing ${selectedIds.length} products...`);
-        
         try {
-            // Upload icon once
-            const formData = new FormData();
-            formData.append('image', iconInput.files[0]);
-            const uploadResponse = await fetch(`https://api.imgbb.com/1/upload?key=d3b0e9fd43ff0eb762987129a2f21e9c`, { method: 'POST', body: formData });
-            const uploadResult = await uploadResponse.json();
-            if (!uploadResult.success) throw new Error(uploadResult.error?.message || 'Icon upload failed');
-            const iconUrl = uploadResult.data.url;
-            
-            // Create all products
+            const iconUrl = await this.uploadToImgbb(iconInput.files[0]);
             const selectedServices = selectedIds.map(id => this.state.g2bulkServicesRaw.find(s => s.service === id)).filter(Boolean);
-            let successCount = 0;
-            let failCount = 0;
-            
+            let successCount = 0, failCount = 0;
             for (const service of selectedServices) {
                 try {
                     const mmkPrice = Math.ceil(parseFloat(service.rate) * rate);
                     const productData = {
-                        categoryId: categoryId,
-                        name: service.name,
-                        price: mmkPrice,
-                        currency: 'MMK',
-                        discount: 0,
-                        deliveryTime: 'instant',
-                        icon: iconUrl,
-                        serviceId: parseInt(service.service),
-                        g2bulkRate: service.rate,
-                        g2bulkMin: parseInt(service.min) || 1,
-                        g2bulkMax: parseInt(service.max) || 1,
-                        g2bulkServiceName: service.name,
-                        exchangeRate: rate
+                        categoryId, name: service.name, price: mmkPrice, currency: 'MMK', discount: 0,
+                        deliveryTime: 'instant', icon: iconUrl, serviceId: parseInt(service.service),
+                        g2bulkRate: service.rate, g2bulkMin: parseInt(service.min) || 1, g2bulkMax: parseInt(service.max) || 1,
+                        g2bulkServiceName: service.name, exchangeRate: rate
                     };
-                    await Database.createProduct(productData);
+                    const newProduct = await Database.createProduct(productData);
+                    if (newProduct) this.state.products.push(newProduct);
                     successCount++;
-                } catch (e) {
-                    failCount++;
-                    console.error(`Failed to create product for service #${service.service}:`, e);
-                }
+                } catch (e) { failCount++; console.error(`Failed to create product for service #${service.service}:`, e); }
             }
-            
-            await this.loadAdminData();
             this.renderProducts();
             this.closeBulkImportModal();
-            
-            if (failCount > 0) {
-                Utils.showToast(`Imported ${successCount} products. ${failCount} failed.`, 'warning');
-            } else {
-                Utils.showToast(`Successfully imported ${successCount} products!`, 'success');
-            }
-        } catch (error) {
-            Utils.showToast('Bulk import failed: ' + error.message, 'error');
-        } finally {
-            Utils.hideLoading();
-        }
+            Utils.showToast(failCount > 0 ? `Imported ${successCount}. ${failCount} failed.` : `Successfully imported ${successCount} products!`, failCount > 0 ? 'warning' : 'success');
+        } catch (error) { Utils.showToast('Bulk import failed: ' + error.message, 'error'); }
+        finally { Utils.hideLoading(); }
     },
-    
+
     // ===== BULK PRICE UPDATE =====
-    
+
     showBulkPriceUpdateModal() {
         this.state.bulkPriceSelectedProducts = new Set();
-        
         const catSelect = document.getElementById('bulk-price-category');
         catSelect.innerHTML = '<option value="">-- Select Category --</option>' + this.state.categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-        
         document.getElementById('bulk-price-select-all').checked = false;
         document.getElementById('bulk-price-selected-count').textContent = '0 selected';
         document.getElementById('bulk-price-rate').value = '';
@@ -1109,208 +1135,120 @@ const AdminApp = {
         document.getElementById('bulk-price-preview').innerHTML = '<div class="empty-state small"><p>Enter new rate to see price changes</p></div>';
         document.getElementById('bulk-price-save-btn').disabled = true;
         document.getElementById('bulk-price-save-count').textContent = '0';
-        
         document.getElementById('bulk-price-update-modal').classList.remove('hidden');
     },
-    
-    closeBulkPriceUpdateModal() {
-        document.getElementById('bulk-price-update-modal').classList.add('hidden');
-    },
-    
+
+    closeBulkPriceUpdateModal() { document.getElementById('bulk-price-update-modal').classList.add('hidden'); },
+
     onBulkPriceCategoryChange() {
         const categoryId = document.getElementById('bulk-price-category').value;
         this.state.bulkPriceSelectedProducts = new Set();
-        
-        if (!categoryId) {
-            document.getElementById('bulk-price-products-list').innerHTML = '<div class="empty-state small"><p>Select a category to load products</p></div>';
-            return;
-        }
-        
+        if (!categoryId) { document.getElementById('bulk-price-products-list').innerHTML = '<div class="empty-state small"><p>Select a category to load products</p></div>'; return; }
         const products = this.state.products.filter(p => p.categoryId === categoryId);
         this.renderBulkPriceProductsList(products);
     },
-    
+
     renderBulkPriceProductsList(products) {
         const container = document.getElementById('bulk-price-products-list');
-        if (products.length === 0) {
-            container.innerHTML = '<div class="empty-state small"><p>No products in this category</p></div>';
-            return;
-        }
-        
+        if (products.length === 0) { container.innerHTML = '<div class="empty-state small"><p>No products in this category</p></div>'; return; }
         container.innerHTML = products.map(p => {
             const isSelected = this.state.bulkPriceSelectedProducts.has(p.id);
             return `<div class="bulk-price-product-item ${isSelected ? 'selected' : ''}" onclick="AdminApp.toggleBulkPriceProduct('${p.id}')">
-                <div class="bulk-service-checkbox">
-                    <input type="checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation(); AdminApp.toggleBulkPriceProduct('${p.id}')">
-                </div>
-                <div class="bulk-price-product-info">
-                    <div class="bulk-service-name">${p.name}</div>
-                    <div class="bulk-service-details">
-                        ${p.serviceId ? `<span class="service-id-badge">#${p.serviceId}</span>` : '<span class="service-id-badge manual">Manual</span>'}
-                        ${p.g2bulkRate ? `<span class="rate-badge">$${p.g2bulkRate}/unit</span>` : ''}
-                    </div>
-                </div>
-                <div class="bulk-service-price">
-                    <div class="price-mmk">${p.price?.toLocaleString()} ${p.currency || 'MMK'}</div>
-                </div>
+                <div class="bulk-service-checkbox"><input type="checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation(); AdminApp.toggleBulkPriceProduct('${p.id}')"></div>
+                <div class="bulk-price-product-info"><div class="bulk-service-name">${p.name}</div><div class="bulk-service-details">${p.serviceId ? `<span class="service-id-badge">#${p.serviceId}</span>` : '<span class="service-id-badge manual">Manual</span>'}${p.g2bulkRate ? `<span class="rate-badge">$${p.g2bulkRate}/unit</span>` : ''}</div></div>
+                <div class="bulk-service-price"><div class="price-mmk">${p.price?.toLocaleString()} ${p.currency || 'MMK'}</div></div>
             </div>`;
         }).join('');
     },
-    
+
     toggleBulkPriceProduct(productId) {
-        if (this.state.bulkPriceSelectedProducts.has(productId)) {
-            this.state.bulkPriceSelectedProducts.delete(productId);
-        } else {
-            this.state.bulkPriceSelectedProducts.add(productId);
-        }
+        if (this.state.bulkPriceSelectedProducts.has(productId)) this.state.bulkPriceSelectedProducts.delete(productId);
+        else this.state.bulkPriceSelectedProducts.add(productId);
         this.updateBulkPriceUI();
     },
-    
+
     toggleBulkPriceSelectAll() {
         const categoryId = document.getElementById('bulk-price-category').value;
         const products = this.state.products.filter(p => p.categoryId === categoryId);
         const cb = document.getElementById('bulk-price-select-all');
-        
-        if (cb.checked) {
-            products.forEach(p => this.state.bulkPriceSelectedProducts.add(p.id));
-        } else {
-            products.forEach(p => this.state.bulkPriceSelectedProducts.delete(p.id));
-        }
+        if (cb.checked) products.forEach(p => this.state.bulkPriceSelectedProducts.add(p.id));
+        else products.forEach(p => this.state.bulkPriceSelectedProducts.delete(p.id));
         this.updateBulkPriceUI();
     },
-    
+
     updateBulkPriceUI() {
         const count = this.state.bulkPriceSelectedProducts.size;
         document.getElementById('bulk-price-selected-count').textContent = `${count} selected`;
         document.getElementById('bulk-price-save-count').textContent = count;
-        
         const rate = parseFloat(document.getElementById('bulk-price-rate').value);
         document.getElementById('bulk-price-save-btn').disabled = count === 0 || !rate || rate <= 0;
-        
-        // Re-render products list
         const categoryId = document.getElementById('bulk-price-category').value;
         if (categoryId) {
             const products = this.state.products.filter(p => p.categoryId === categoryId);
             this.renderBulkPriceProductsList(products);
         }
-        
-        // Update preview
         this.recalculateBulkPrices();
     },
-    
+
     recalculateBulkPrices() {
         const previewContainer = document.getElementById('bulk-price-preview');
         const selectedIds = [...this.state.bulkPriceSelectedProducts];
         const rate = parseFloat(document.getElementById('bulk-price-rate').value);
-        
-        if (selectedIds.length === 0) {
-            previewContainer.innerHTML = '<div class="empty-state small"><p>Select products to see price changes</p></div>';
-            return;
-        }
-        
-        if (!rate || rate <= 0) {
-            previewContainer.innerHTML = '<div class="empty-state small"><p>Enter new exchange rate to see price changes</p></div>';
-            return;
-        }
-        
+        if (selectedIds.length === 0) { previewContainer.innerHTML = '<div class="empty-state small"><p>Select products to see price changes</p></div>'; return; }
+        if (!rate || rate <= 0) { previewContainer.innerHTML = '<div class="empty-state small"><p>Enter new exchange rate to see price changes</p></div>'; return; }
         const selectedProducts = selectedIds.map(id => this.state.products.find(p => p.id === id)).filter(Boolean);
-        
-        previewContainer.innerHTML = `
-            <div class="preview-table">
-                <div class="preview-table-header">
-                    <span class="col-name">Product Name</span>
-                    <span class="col-usd">USD Rate</span>
-                    <span class="col-old">Old Price</span>
-                    <span class="col-new">New Price</span>
-                    <span class="col-diff">Difference</span>
-                </div>
-                ${selectedProducts.map(p => {
-                    const usdRate = parseFloat(p.g2bulkRate) || 0;
-                    const oldPrice = p.price || 0;
-                    const newPrice = usdRate > 0 ? Math.ceil(usdRate * rate) : oldPrice;
-                    const diff = newPrice - oldPrice;
-                    const diffClass = diff > 0 ? 'price-up' : diff < 0 ? 'price-down' : 'price-same';
-                    return `<div class="preview-table-row">
-                        <span class="col-name">${p.name}</span>
-                        <span class="col-usd">${usdRate > 0 ? '$' + usdRate : 'N/A'}</span>
-                        <span class="col-old">${oldPrice.toLocaleString()} MMK</span>
-                        <span class="col-new">${newPrice.toLocaleString()} MMK</span>
-                        <span class="col-diff ${diffClass}">${diff >= 0 ? '+' : ''}${diff.toLocaleString()} MMK</span>
-                    </div>`;
-                }).join('')}
-            </div>
-            <div class="preview-summary">
-                <span>Total: ${selectedProducts.length} products</span>
-                <span>New Rate: 1 USD = ${rate.toLocaleString()} MMK</span>
-            </div>
-        `;
+        previewContainer.innerHTML = `<div class="preview-table"><div class="preview-table-header"><span class="col-name">Product Name</span><span class="col-usd">USD Rate</span><span class="col-old">Old Price</span><span class="col-new">New Price</span><span class="col-diff">Difference</span></div>
+            ${selectedProducts.map(p => {
+                const usdRate = parseFloat(p.g2bulkRate) || 0;
+                const oldPrice = p.price || 0;
+                const newPrice = usdRate > 0 ? Math.ceil(usdRate * rate) : oldPrice;
+                const diff = newPrice - oldPrice;
+                const diffClass = diff > 0 ? 'price-up' : diff < 0 ? 'price-down' : 'price-same';
+                return `<div class="preview-table-row"><span class="col-name">${p.name}</span><span class="col-usd">${usdRate > 0 ? '$' + usdRate : 'N/A'}</span><span class="col-old">${oldPrice.toLocaleString()} MMK</span><span class="col-new">${newPrice.toLocaleString()} MMK</span><span class="col-diff ${diffClass}">${diff >= 0 ? '+' : ''}${diff.toLocaleString()} MMK</span></div>`;
+            }).join('')}</div>
+            <div class="preview-summary"><span>Total: ${selectedProducts.length} products</span><span>New Rate: 1 USD = ${rate.toLocaleString()} MMK</span></div>`;
     },
-    
+
     async saveBulkPriceUpdate() {
         const selectedIds = [...this.state.bulkPriceSelectedProducts];
         if (selectedIds.length === 0) { Utils.showToast('No products selected', 'warning'); return; }
-        
         const rate = parseFloat(document.getElementById('bulk-price-rate').value);
         if (!rate || rate <= 0) { Utils.showToast('Please enter a valid exchange rate', 'warning'); return; }
-        
         if (!confirm(`Update prices for ${selectedIds.length} products with new rate 1 USD = ${rate} MMK?`)) return;
-        
+
         Utils.showLoading(`Updating ${selectedIds.length} product prices...`);
-        
         try {
-            let successCount = 0;
-            let failCount = 0;
-            let skippedCount = 0;
-            
+            let successCount = 0, failCount = 0, skippedCount = 0;
             for (const productId of selectedIds) {
                 const product = this.state.products.find(p => p.id === productId);
                 if (!product) { failCount++; continue; }
-                
                 const usdRate = parseFloat(product.g2bulkRate);
-                if (!usdRate || usdRate <= 0) {
-                    skippedCount++;
-                    continue;
-                }
-                
+                if (!usdRate || usdRate <= 0) { skippedCount++; continue; }
                 try {
                     const newPrice = Math.ceil(usdRate * rate);
-                    await Database.updateProduct(productId, {
-                        ...product,
-                        price: newPrice,
-                        currency: 'MMK',
-                        exchangeRate: rate
-                    });
+                    await Database.updateProduct(productId, { ...product, price: newPrice, currency: 'MMK', exchangeRate: rate });
+                    const idx = this.state.products.findIndex(p => p.id === productId);
+                    if (idx !== -1) { this.state.products[idx].price = newPrice; this.state.products[idx].exchangeRate = rate; }
                     successCount++;
-                } catch (e) {
-                    failCount++;
-                    console.error(`Failed to update product ${productId}:`, e);
-                }
+                } catch (e) { failCount++; console.error(`Failed to update product ${productId}:`, e); }
             }
-            
-            await this.loadAdminData();
             this.renderProducts();
             this.closeBulkPriceUpdateModal();
-            
             let msg = `Updated ${successCount} prices.`;
             if (skippedCount > 0) msg += ` ${skippedCount} skipped (no USD rate).`;
             if (failCount > 0) msg += ` ${failCount} failed.`;
             Utils.showToast(msg, failCount > 0 ? 'warning' : 'success');
-        } catch (error) {
-            Utils.showToast('Bulk price update failed: ' + error.message, 'error');
-        } finally {
-            Utils.hideLoading();
-        }
+        } catch (error) { Utils.showToast('Bulk price update failed: ' + error.message, 'error'); }
+        finally { Utils.hideLoading(); }
     },
-    
+
     // ===== G2BULK SERVICES PAGE =====
-    
+
     renderG2BulkPage() {
         this.refreshApiBalance();
-        if (this.state.g2bulkServicesRaw.length > 0) {
-            this.renderG2BulkServicesList(this.state.g2bulkServicesRaw);
-        }
+        if (this.state.g2bulkServicesRaw.length > 0) this.renderG2BulkServicesList(this.state.g2bulkServicesRaw);
     },
-    
+
     async refreshG2BulkServices() {
         Utils.showLoading('Loading G2Bulk services...');
         try {
@@ -1322,13 +1260,10 @@ const AdminApp = {
             if (catFilter) catFilter.innerHTML = '<option value="all">All Categories</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
             this.renderG2BulkServicesList(this.state.g2bulkServicesRaw);
             Utils.showToast(`Loaded ${this.state.g2bulkServicesRaw.length} services`, 'success');
-        } catch (error) {
-            Utils.showToast('Failed to load services: ' + error.message, 'error');
-        } finally {
-            Utils.hideLoading();
-        }
+        } catch (error) { Utils.showToast('Failed to load services: ' + error.message, 'error'); }
+        finally { Utils.hideLoading(); }
     },
-    
+
     filterG2BulkServices() {
         const query = (document.getElementById('g2bulk-search')?.value || '').toLowerCase();
         const catFilter = document.getElementById('g2bulk-category-filter')?.value || 'all';
@@ -1337,38 +1272,23 @@ const AdminApp = {
         if (query) filtered = filtered.filter(s => s.name.toLowerCase().includes(query) || String(s.service).includes(query) || (s.category && s.category.toLowerCase().includes(query)));
         this.renderG2BulkServicesList(filtered);
     },
-    
+
     renderG2BulkServicesList(services) {
         const container = document.getElementById('g2bulk-services-list');
         const countEl = document.getElementById('g2bulk-services-count');
         if (countEl) countEl.textContent = `${services.length} services found`;
-        if (services.length === 0) {
-            container.innerHTML = '<div class="empty-state"><i class="fas fa-search"></i><p>No services found</p></div>';
-            return;
-        }
+        if (services.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fas fa-search"></i><p>No services found</p></div>'; return; }
         const display = services.slice(0, 200);
         container.innerHTML = display.map(service => `
             <div class="g2bulk-service-card">
-                <div class="service-header">
-                    <span class="service-id-badge">#${service.service}</span>
-                    <span class="service-category-badge">${service.category || 'N/A'}</span>
-                </div>
+                <div class="service-header"><span class="service-id-badge">#${service.service}</span><span class="service-category-badge">${service.category || 'N/A'}</span></div>
                 <div class="service-name">${service.name}</div>
-                <div class="service-details">
-                    <div class="service-detail"><span>Rate:</span><strong>$${service.rate}</strong></div>
-                    <div class="service-detail"><span>Min:</span><strong>${service.min}</strong></div>
-                    <div class="service-detail"><span>Max:</span><strong>${service.max}</strong></div>
-                </div>
-                <button class="btn btn-primary btn-sm btn-full" onclick="AdminApp.quickAddProduct(${service.service})">
-                    <i class="fas fa-plus"></i> Add as Product
-                </button>
-            </div>
-        `).join('');
-        if (services.length > 200) {
-            container.innerHTML += `<p class="load-more-text">Showing 200 of ${services.length} services. Use search to find more.</p>`;
-        }
+                <div class="service-details"><div class="service-detail"><span>Rate:</span><strong>$${service.rate}</strong></div><div class="service-detail"><span>Min:</span><strong>${service.min}</strong></div><div class="service-detail"><span>Max:</span><strong>${service.max}</strong></div></div>
+                <button class="btn btn-primary btn-sm btn-full" onclick="AdminApp.quickAddProduct(${service.service})"><i class="fas fa-plus"></i> Add as Product</button>
+            </div>`).join('');
+        if (services.length > 200) container.innerHTML += `<p class="load-more-text">Showing 200 of ${services.length}. Use search to find more.</p>`;
     },
-    
+
     quickAddProduct(serviceId) {
         const service = this.state.g2bulkServicesRaw.find(s => s.service === serviceId);
         if (!service) return;
@@ -1379,10 +1299,10 @@ const AdminApp = {
         document.getElementById('product-g2bulk-min').value = service.min;
         document.getElementById('product-g2bulk-max').value = service.max;
     },
-    
-    // ===== BANNERS =====
+
+    // ===== BANNERS (imgbb upload) =====
     renderBanners() { this.renderBannerType(this.state.currentBannerType); },
-    
+
     renderBannerType(type) {
         this.state.currentBannerType = type;
         document.querySelectorAll('.banner-tabs .tab-btn').forEach(b => b.classList.remove('active'));
@@ -1399,7 +1319,7 @@ const AdminApp = {
             return `<div class="banner-card"><img src="${banner.image}" alt="Banner"><div class="banner-info">${cat ? `<p><strong>Category:</strong> ${cat.name}</p>` : ''}${banner.description ? `<p class="description">${banner.description.substring(0, 100)}...</p>` : ''}<p class="date">${Utils.formatDate(banner.createdAt)}</p></div><button class="btn btn-danger btn-sm" onclick="AdminApp.deleteBanner('${banner.id}', '${type}')"><i class="fas fa-trash"></i> Delete</button></div>`;
         }).join('');
     },
-    
+
     showAddBanner(type) {
         this.state.currentBannerType = type;
         document.getElementById('banner-category-group').style.display = type === 'type2' ? 'block' : 'none';
@@ -1411,9 +1331,9 @@ const AdminApp = {
         document.getElementById('banner-image-preview').classList.add('hidden');
         document.getElementById('add-banner-modal').classList.remove('hidden');
     },
-    
+
     closeAddBanner() { document.getElementById('add-banner-modal').classList.add('hidden'); },
-    
+
     async saveBanner() {
         const type = this.state.currentBannerType;
         const imageInput = document.getElementById('banner-image');
@@ -1423,28 +1343,32 @@ const AdminApp = {
         if (type === 'type2' && !categoryId) { Utils.showToast('Please select a category', 'warning'); return; }
         Utils.showLoading('Uploading banner...');
         try {
-            const formData = new FormData();
-            formData.append('image', imageInput.files[0]);
-            const response = await fetch(`https://api.imgbb.com/1/upload?key=d3b0e9fd43ff0eb762987129a2f21e9c`, { method: 'POST', body: formData });
-            const result = await response.json();
-            if (!result.success) throw new Error(result.error?.message || 'Upload failed');
-            const data = { image: result.data.url };
+            const imageUrl = await this.uploadToImgbb(imageInput.files[0]);
+            const data = { image: imageUrl };
             if (type === 'type2') { data.categoryId = categoryId; data.description = description; }
-            await Database.createBanner(data, type);
-            await this.loadAdminData(); this.renderBanners(); this.closeAddBanner();
+            const newBanner = await Database.createBanner(data, type);
+            if (type === 'type1') { if (!this.state.banners.type1) this.state.banners.type1 = []; if (newBanner) this.state.banners.type1.push(newBanner); }
+            else { if (!this.state.banners.type2) this.state.banners.type2 = []; if (newBanner) this.state.banners.type2.push(newBanner); }
+            this.renderBanners();
+            this.closeAddBanner();
             Utils.showToast('Banner created!', 'success');
         } catch (error) { Utils.showToast('Failed to save banner: ' + error.message, 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     async deleteBanner(bannerId, type) {
         if (!confirm('Delete this banner?')) return;
         Utils.showLoading('Deleting...');
-        try { await Database.deleteBanner(bannerId, type); await this.loadAdminData(); this.renderBanners(); Utils.showToast('Banner deleted!', 'success'); }
-        catch (error) { Utils.showToast('Failed to delete', 'error'); }
+        try {
+            await Database.deleteBanner(bannerId, type);
+            if (type === 'type1') this.state.banners.type1 = (this.state.banners.type1 || []).filter(b => b.id !== bannerId);
+            else this.state.banners.type2 = (this.state.banners.type2 || []).filter(b => b.id !== bannerId);
+            this.renderBanners();
+            Utils.showToast('Banner deleted!', 'success');
+        } catch (error) { Utils.showToast('Failed to delete', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     // ===== INPUT TABLES =====
     renderInputTables() {
         const container = document.getElementById('admin-input-tables-list');
@@ -1462,17 +1386,10 @@ const AdminApp = {
                     checkerInfo = `<div class="checker-config-preview"><span class="checker-badge"><i class="fas fa-search"></i> ID Checker Enabled</span><span class="checker-method-badge ${method.toLowerCase()}">${method}</span><span class="checker-url-preview" title="${url}">${url.length > 40 ? url.substring(0, 40) + '...' : url}</span></div>`;
                 }
             }
-            return `<div class="input-table-card">
-                <div class="input-table-icon"><i class="fas fa-keyboard"></i></div>
-                <div class="input-table-info"><h4>${table.name}</h4><p>${cat?.name || 'Unknown'}</p><p class="placeholder">"${table.placeholder}"</p>${checkerInfo}</div>
-                <div class="input-table-actions">
-                    <button class="action-btn edit" onclick="AdminApp.editInputTable('${table.id}')"><i class="fas fa-edit"></i></button>
-                    <button class="action-btn delete" onclick="AdminApp.deleteInputTable('${table.id}')"><i class="fas fa-trash"></i></button>
-                </div>
-            </div>`;
+            return `<div class="input-table-card"><div class="input-table-icon"><i class="fas fa-keyboard"></i></div><div class="input-table-info"><h4>${table.name}</h4><p>${cat?.name || 'Unknown'}</p><p class="placeholder">"${table.placeholder}"</p>${checkerInfo}</div><div class="input-table-actions"><button class="action-btn edit" onclick="AdminApp.editInputTable('${table.id}')"><i class="fas fa-edit"></i></button><button class="action-btn delete" onclick="AdminApp.deleteInputTable('${table.id}')"><i class="fas fa-trash"></i></button></div></div>`;
         }).join('');
     },
-    
+
     showAddInputTable() {
         this.state.editingItem = null;
         document.getElementById('input-table-modal-title').textContent = 'Add Input Table';
@@ -1489,7 +1406,7 @@ const AdminApp = {
         document.getElementById('checker-test-result').classList.add('hidden');
         document.getElementById('add-input-table-modal').classList.remove('hidden');
     },
-    
+
     editInputTable(tableId) {
         const table = this.state.inputTables.find(t => t.id === tableId);
         if (!table) return;
@@ -1501,8 +1418,7 @@ const AdminApp = {
         document.getElementById('checker-enabled').checked = table.checkerEnabled || false;
         document.getElementById('checker-json-section').classList.toggle('hidden', !table.checkerEnabled);
         if (table.checkerConfig) {
-            let configStr = typeof table.checkerConfig === 'string' ? table.checkerConfig : JSON.stringify(table.checkerConfig, null, 2);
-            document.getElementById('checker-json-config').value = configStr;
+            document.getElementById('checker-json-config').value = typeof table.checkerConfig === 'string' ? table.checkerConfig : JSON.stringify(table.checkerConfig, null, 2);
             this.previewCheckerConfig();
         } else {
             document.getElementById('checker-json-config').value = '';
@@ -1512,9 +1428,9 @@ const AdminApp = {
         document.getElementById('checker-test-result').classList.add('hidden');
         document.getElementById('add-input-table-modal').classList.remove('hidden');
     },
-    
+
     closeAddInputTable() { document.getElementById('add-input-table-modal').classList.add('hidden'); this.state.editingItem = null; },
-    
+
     previewCheckerConfig() {
         const jsonStr = document.getElementById('checker-json-config').value.trim();
         const previewDiv = document.getElementById('checker-json-preview');
@@ -1527,19 +1443,8 @@ const AdminApp = {
             const hasBody = !!config.body || !!config.bodyTemplate;
             const rp = config.responsePath || config.response || {};
             let requiredInputs = [];
-            if (config.body) {
-                const bodyStr = JSON.stringify(config.body);
-                const matches = bodyStr.match(/\{\{([^}]+)\}\}/g) || [];
-                requiredInputs = matches.map(m => m.replace(/\{\{|\}\}/g, ''));
-            }
-            previewDiv.innerHTML = `<div class="json-preview-card"><h4><i class="fas fa-check-circle" style="color: var(--success);"></i> Config Parsed Successfully</h4><div class="preview-grid">
-                <div class="preview-item"><span class="preview-label">URL</span><span class="preview-value url">${url}</span></div>
-                <div class="preview-item"><span class="preview-label">Method</span><span class="preview-value"><span class="method-badge ${method.toLowerCase()}">${method}</span></span></div>
-                <div class="preview-item"><span class="preview-label">Headers</span><span class="preview-value">${hasHeaders ? Object.keys(config.headers).join(', ') : 'Default'}</span></div>
-                ${hasBody ? `<div class="preview-item"><span class="preview-label">Body</span><span class="preview-value">✅ Configured</span></div>` : ''}
-                ${requiredInputs.length > 0 ? `<div class="preview-item"><span class="preview-label">Required Inputs</span><span class="preview-value">${requiredInputs.map(r => `<span class="input-ref-tag">{{${r}}}</span>`).join(' ')}</span></div>` : ''}
-                <div class="preview-item"><span class="preview-label">Response Mapping</span><span class="preview-value">${rp.valid ? `Valid: <code>${rp.valid}</code>` : ''}${rp.nickname ? ` | Nickname: <code>${rp.nickname}</code>` : ''}${rp.country ? ` | Country: <code>${rp.country}</code>` : ''}</span></div>
-            </div></div>`;
+            if (config.body) { const bodyStr = JSON.stringify(config.body); const matches = bodyStr.match(/\{\{([^}]+)\}\}/g) || []; requiredInputs = matches.map(m => m.replace(/\{\{|\}\}/g, '')); }
+            previewDiv.innerHTML = `<div class="json-preview-card"><h4><i class="fas fa-check-circle" style="color: var(--success);"></i> Config Parsed Successfully</h4><div class="preview-grid"><div class="preview-item"><span class="preview-label">URL</span><span class="preview-value url">${url}</span></div><div class="preview-item"><span class="preview-label">Method</span><span class="preview-value"><span class="method-badge ${method.toLowerCase()}">${method}</span></span></div><div class="preview-item"><span class="preview-label">Headers</span><span class="preview-value">${hasHeaders ? Object.keys(config.headers).join(', ') : 'Default'}</span></div>${hasBody ? `<div class="preview-item"><span class="preview-label">Body</span><span class="preview-value">✅ Configured</span></div>` : ''}${requiredInputs.length > 0 ? `<div class="preview-item"><span class="preview-label">Required Inputs</span><span class="preview-value">${requiredInputs.map(r => `<span class="input-ref-tag">{{${r}}}</span>`).join(' ')}</span></div>` : ''}<div class="preview-item"><span class="preview-label">Response Mapping</span><span class="preview-value">${rp.valid ? `Valid: <code>${rp.valid}</code>` : ''}${rp.nickname ? ` | Nickname: <code>${rp.nickname}</code>` : ''}${rp.country ? ` | Country: <code>${rp.country}</code>` : ''}</span></div></div></div>`;
             previewDiv.classList.remove('hidden');
             document.getElementById('checker-test-section').classList.remove('hidden');
         } catch (e) {
@@ -1548,10 +1453,10 @@ const AdminApp = {
             document.getElementById('checker-test-section').classList.add('hidden');
         }
     },
-    
+
     loadSampleConfig(type) {
         const samples = {
-            'rapidapi-mlbb': `{\n  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",\n  "method": "POST",\n  "headers": {\n    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",\n    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",\n    "Content-Type": "application/json"\n  },\n  "body": {\n    "game": "mobile-legends",\n    "userid": "{{value}}",\n    "zoneid": "{{Zone ID}}"\n  },\n  "responsePath": {\n    "valid": "success",\n    "nickname": "data.username",\n    "country": "data.country"\n  },\n  "errorMessage": "Game ID not found! Please check your User ID and Zone ID."\n}`,
+            'rapidapi-mlbb': `{\n  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",\n  "method": "POST",\n  "headers": {\n    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",\n    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",\n    "Content-Type": "application/json"\n  },\n  "body": {\n    "game": "mobile-legends",\n    "userid": "{{value}}",\n    "zoneid": "{{Zone ID}}"\n  },\n  "responsePath": {\n    "valid": "success",\n    "nickname": "data.username",\n    "country": "data.country"\n  },\n  "errorMessage": "Game ID not found!"\n}`,
             'rapidapi-ff': `{\n  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",\n  "method": "POST",\n  "headers": {\n    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",\n    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",\n    "Content-Type": "application/json"\n  },\n  "body": {\n    "game": "free-fire",\n    "userid": "{{value}}"\n  },\n  "responsePath": {\n    "valid": "success",\n    "nickname": "data.username",\n    "country": "data.country"\n  },\n  "errorMessage": "Free Fire ID not found!"\n}`,
             'rapidapi-genshin': `{\n  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",\n  "method": "POST",\n  "headers": {\n    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",\n    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",\n    "Content-Type": "application/json"\n  },\n  "body": {\n    "game": "genshin-impact",\n    "userid": "{{value}}"\n  },\n  "responsePath": {\n    "valid": "success",\n    "nickname": "data.username",\n    "country": "data.country"\n  },\n  "errorMessage": "Genshin Impact UID not found!"\n}`,
             'rapidapi-pubg': `{\n  "url": "https://check-id-game1.p.rapidapi.com/check-id-game",\n  "method": "POST",\n  "headers": {\n    "x-rapidapi-key": "YOUR_RAPIDAPI_KEY_HERE",\n    "x-rapidapi-host": "check-id-game1.p.rapidapi.com",\n    "Content-Type": "application/json"\n  },\n  "body": {\n    "game": "pubg-mobile",\n    "userid": "{{value}}"\n  },\n  "responsePath": {\n    "valid": "success",\n    "nickname": "data.username",\n    "country": "data.country"\n  },\n  "errorMessage": "PUBG Mobile ID not found!"\n}`,
@@ -1560,13 +1465,9 @@ const AdminApp = {
             'custom-post': `{\n  "url": "https://your-api.com/verify",\n  "method": "POST",\n  "headers": {\n    "Content-Type": "application/json",\n    "Authorization": "Bearer YOUR_TOKEN"\n  },\n  "body": {\n    "user_id": "{{value}}",\n    "server_id": "{{Server ID}}"\n  },\n  "responsePath": {\n    "valid": "success",\n    "nickname": "result.player_name",\n    "country": "result.country_code"\n  },\n  "errorMessage": "Player not found!"\n}`
         };
         const config = samples[type];
-        if (config) {
-            document.getElementById('checker-json-config').value = config;
-            this.previewCheckerConfig();
-            Utils.showToast('Sample config loaded! Remember to replace YOUR_RAPIDAPI_KEY_HERE', 'info');
-        }
+        if (config) { document.getElementById('checker-json-config').value = config; this.previewCheckerConfig(); Utils.showToast('Sample config loaded!', 'info'); }
     },
-    
+
     async saveInputTable() {
         const categoryId = document.getElementById('input-table-category').value;
         const name = document.getElementById('input-table-name').value.trim();
@@ -1577,36 +1478,47 @@ const AdminApp = {
         if (checkerEnabled) {
             const jsonStr = document.getElementById('checker-json-config').value.trim();
             if (!jsonStr) { Utils.showToast('Please enter checker JSON config', 'warning'); return; }
-            try {
-                checkerConfig = JSON.parse(jsonStr);
-                if (!checkerConfig.url && !checkerConfig.apiUrl) { Utils.showToast('Config must have "url" field', 'warning'); return; }
-            } catch (e) { Utils.showToast('Invalid JSON: ' + e.message, 'error'); return; }
+            try { checkerConfig = JSON.parse(jsonStr); if (!checkerConfig.url && !checkerConfig.apiUrl) { Utils.showToast('Config must have "url" field', 'warning'); return; } }
+            catch (e) { Utils.showToast('Invalid JSON: ' + e.message, 'error'); return; }
         }
         Utils.showLoading('Saving...');
         try {
             const data = { categoryId, name, placeholder, checkerEnabled, checkerConfig };
-            if (this.state.editingItem) { await Database.updateInputTable(this.state.editingItem.id, data); Utils.showToast('Updated!', 'success'); }
-            else { await Database.createInputTable(data); Utils.showToast('Created!', 'success'); }
-            await this.loadAdminData(); this.renderInputTables(); this.closeAddInputTable();
+            if (this.state.editingItem) {
+                await Database.updateInputTable(this.state.editingItem.id, data);
+                const idx = this.state.inputTables.findIndex(t => t.id === this.state.editingItem.id);
+                if (idx !== -1) Object.assign(this.state.inputTables[idx], data);
+                Utils.showToast('Updated!', 'success');
+            } else {
+                const newTable = await Database.createInputTable(data);
+                if (newTable) this.state.inputTables.push(newTable);
+                Utils.showToast('Created!', 'success');
+            }
+            this.renderInputTables();
+            this.closeAddInputTable();
         } catch (error) { Utils.showToast('Failed to save', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     async deleteInputTable(tableId) {
         if (!confirm('Delete this input table?')) return;
         Utils.showLoading('Deleting...');
-        try { await Database.deleteInputTable(tableId); await this.loadAdminData(); this.renderInputTables(); Utils.showToast('Deleted!', 'success'); }
-        catch (error) { Utils.showToast('Failed', 'error'); }
+        try {
+            await Database.deleteInputTable(tableId);
+            this.state.inputTables = this.state.inputTables.filter(t => t.id !== tableId);
+            this.renderInputTables();
+            Utils.showToast('Deleted!', 'success');
+        } catch (error) { Utils.showToast('Failed', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     async testChecker() {
         const testValue = document.getElementById('checker-test-value').value.trim();
         if (!testValue) { Utils.showToast('Enter a test value', 'warning'); return; }
         const jsonStr = document.getElementById('checker-json-config').value.trim();
         if (!jsonStr) { Utils.showToast('Enter JSON config first', 'warning'); return; }
         const resultDiv = document.getElementById('checker-test-result');
-        resultDiv.innerHTML = `<div class="test-result-card loading"><div class="checker-loading-content"><div class="checker-spinner"></div><span>Testing Game ID Checker...</span></div></div>`;
+        resultDiv.innerHTML = `<div class="test-result-card loading"><div class="checker-loading-content"><div class="checker-spinner"></div><span>Testing...</span></div></div>`;
         resultDiv.classList.remove('hidden');
         try {
             let config;
@@ -1622,15 +1534,15 @@ const AdminApp = {
                 let infoRows = '';
                 if (result.nickname) infoRows += `<div class="test-info-row"><span>Nickname:</span><strong>${result.nickname}</strong></div>`;
                 if (result.country) infoRows += `<div class="test-info-row"><span>Country:</span><strong>${CountryHelper.getDisplay(result.country)}</strong></div>`;
-                resultDiv.innerHTML = `<div class="test-result-card valid"><div class="test-result-header valid"><i class="fas fa-check-circle"></i> Test Successful - Account Found!</div><div class="test-result-body">${infoRows}<details class="raw-response"><summary>Raw API Response</summary><pre>${JSON.stringify(result.raw, null, 2)}</pre></details></div></div>`;
+                resultDiv.innerHTML = `<div class="test-result-card valid"><div class="test-result-header valid"><i class="fas fa-check-circle"></i> Test Successful!</div><div class="test-result-body">${infoRows}<details class="raw-response"><summary>Raw Response</summary><pre>${JSON.stringify(result.raw, null, 2)}</pre></details></div></div>`;
             } else {
-                resultDiv.innerHTML = `<div class="test-result-card invalid"><div class="test-result-header invalid"><i class="fas fa-times-circle"></i> Test Failed - Account Not Found</div><div class="test-result-body">${result?.error ? `<p class="error-msg">Error: ${result.error}</p>` : ''}<details class="raw-response"><summary>Raw API Response</summary><pre>${JSON.stringify(result?.raw || {}, null, 2)}</pre></details></div></div>`;
+                resultDiv.innerHTML = `<div class="test-result-card invalid"><div class="test-result-header invalid"><i class="fas fa-times-circle"></i> Not Found</div><div class="test-result-body">${result?.error ? `<p class="error-msg">${result.error}</p>` : ''}<details class="raw-response"><summary>Raw Response</summary><pre>${JSON.stringify(result?.raw || {}, null, 2)}</pre></details></div></div>`;
             }
         } catch (error) {
-            resultDiv.innerHTML = `<div class="test-result-card error"><div class="test-result-header error"><i class="fas fa-exclamation-triangle"></i> Test Error</div><p>${error.message}</p></div>`;
+            resultDiv.innerHTML = `<div class="test-result-card error"><div class="test-result-header error"><i class="fas fa-exclamation-triangle"></i> Error</div><p>${error.message}</p></div>`;
         }
     },
-    
+
     updateTestInputs() {
         const jsonStr = document.getElementById('checker-json-config').value.trim();
         const testInputsContainer = document.getElementById('checker-test-extra-inputs');
@@ -1641,24 +1553,18 @@ const AdminApp = {
             if (requiredInputs.length > 0) {
                 testInputsContainer.innerHTML = requiredInputs.map(name => `<div class="test-extra-input"><label>${name}</label><input type="text" id="checker-test-${name.replace(/\s/g, '-').toLowerCase()}" placeholder="Enter test ${name}"></div>`).join('');
                 testInputsContainer.classList.remove('hidden');
-            } else {
-                testInputsContainer.innerHTML = '';
-                testInputsContainer.classList.add('hidden');
-            }
-        } catch(e) {
-            testInputsContainer.innerHTML = '';
-            testInputsContainer.classList.add('hidden');
-        }
+            } else { testInputsContainer.innerHTML = ''; testInputsContainer.classList.add('hidden'); }
+        } catch(e) { testInputsContainer.innerHTML = ''; testInputsContainer.classList.add('hidden'); }
     },
-    
-    // ===== PAYMENTS =====
+
+    // ===== PAYMENTS (imgbb upload) =====
     renderPayments() {
         const container = document.getElementById('admin-payments-list');
         if (!container) return;
         if (this.state.payments.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fas fa-credit-card"></i><p>No payment methods yet</p></div>'; return; }
         container.innerHTML = this.state.payments.map(p => `<div class="payment-card"><div class="payment-icon"><img src="${p.icon}" alt="${p.name}"></div><div class="payment-info"><h4>${p.name}</h4><p class="address">${p.address}</p><p class="account">${p.accountName}</p>${p.note ? `<p class="note">${p.note}</p>` : ''}</div><div class="payment-actions"><button class="action-btn edit" onclick="AdminApp.editPayment('${p.id}')"><i class="fas fa-edit"></i></button><button class="action-btn delete" onclick="AdminApp.deletePayment('${p.id}')"><i class="fas fa-trash"></i></button></div></div>`).join('');
     },
-    
+
     showAddPayment() {
         this.state.editingItem = null;
         ['payment-name', 'payment-address', 'payment-account-name', 'payment-note'].forEach(id => document.getElementById(id).value = '');
@@ -1667,7 +1573,7 @@ const AdminApp = {
         document.getElementById('payment-icon-preview').classList.add('hidden');
         document.getElementById('add-payment-modal').classList.remove('hidden');
     },
-    
+
     editPayment(paymentId) {
         const p = this.state.payments.find(pm => pm.id === paymentId);
         if (!p) return;
@@ -1679,9 +1585,9 @@ const AdminApp = {
         if (p.icon) { document.getElementById('payment-icon-preview').innerHTML = `<img src="${p.icon}" alt="Icon">`; document.getElementById('payment-icon-preview').classList.remove('hidden'); }
         document.getElementById('add-payment-modal').classList.remove('hidden');
     },
-    
+
     closeAddPayment() { document.getElementById('add-payment-modal').classList.add('hidden'); this.state.editingItem = null; },
-    
+
     async savePayment() {
         const name = document.getElementById('payment-name').value.trim();
         const address = document.getElementById('payment-address').value.trim();
@@ -1692,24 +1598,39 @@ const AdminApp = {
         Utils.showLoading('Saving...');
         try {
             let icon = this.state.editingItem?.icon || '';
-            if (iconInput.files[0]) icon = await Utils.compressImage(iconInput.files[0], 200, 0.8);
+            if (iconInput.files[0]) {
+                icon = await this.uploadToImgbb(iconInput.files[0]);
+            }
             if (!icon && !this.state.editingItem) { Utils.showToast('Please upload icon', 'warning'); Utils.hideLoading(); return; }
             const data = { name, address, accountName, note, icon };
-            if (this.state.editingItem) { await Database.updatePaymentMethod(this.state.editingItem.id, data); Utils.showToast('Updated!', 'success'); }
-            else { await Database.createPaymentMethod(data); Utils.showToast('Created!', 'success'); }
-            await this.loadAdminData(); this.renderPayments(); this.closeAddPayment();
-        } catch (error) { Utils.showToast('Failed', 'error'); }
+            if (this.state.editingItem) {
+                await Database.updatePaymentMethod(this.state.editingItem.id, data);
+                const idx = this.state.payments.findIndex(pm => pm.id === this.state.editingItem.id);
+                if (idx !== -1) Object.assign(this.state.payments[idx], data);
+                Utils.showToast('Updated!', 'success');
+            } else {
+                const newPayment = await Database.createPaymentMethod(data);
+                if (newPayment) this.state.payments.push(newPayment);
+                Utils.showToast('Created!', 'success');
+            }
+            this.renderPayments();
+            this.closeAddPayment();
+        } catch (error) { Utils.showToast('Failed: ' + error.message, 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     async deletePayment(paymentId) {
         if (!confirm('Delete this payment method?')) return;
         Utils.showLoading('Deleting...');
-        try { await Database.deletePaymentMethod(paymentId); await this.loadAdminData(); this.renderPayments(); Utils.showToast('Deleted!', 'success'); }
-        catch (error) { Utils.showToast('Failed', 'error'); }
+        try {
+            await Database.deletePaymentMethod(paymentId);
+            this.state.payments = this.state.payments.filter(p => p.id !== paymentId);
+            this.renderPayments();
+            Utils.showToast('Deleted!', 'success');
+        } catch (error) { Utils.showToast('Failed', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     // ===== ANNOUNCEMENTS =====
     renderAnnouncements() {
         const textArea = document.getElementById('announcement-text');
@@ -1717,7 +1638,7 @@ const AdminApp = {
         if (textArea) textArea.value = '';
         if (currentText) currentText.textContent = this.state.settings.announcement || 'No announcement set';
     },
-    
+
     async saveAnnouncement() {
         const text = document.getElementById('announcement-text').value.trim();
         if (!text) { Utils.showToast('Please enter text', 'warning'); return; }
@@ -1731,7 +1652,7 @@ const AdminApp = {
         } catch (error) { Utils.showToast('Failed', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     // ===== BROADCAST =====
     async sendBroadcast() {
         const message = document.getElementById('broadcast-message').value.trim();
@@ -1741,7 +1662,7 @@ const AdminApp = {
         try {
             let photo = null;
             const imageInput = document.getElementById('broadcast-image');
-            if (imageInput.files[0]) photo = await Utils.compressImage(imageInput.files[0], 800, 0.8);
+            if (imageInput.files[0]) photo = await this.uploadToImgbb(imageInput.files[0]);
             const userIds = this.state.users.map(u => u.telegramId);
             const results = await TelegramBot.broadcast(userIds, message, photo);
             Utils.showToast(`Sent: ${results.success} success, ${results.failed} failed`, 'success');
@@ -1749,7 +1670,7 @@ const AdminApp = {
         } catch (error) { Utils.showToast('Failed', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     // ===== BANNED USERS =====
     renderBannedUsers() {
         const container = document.getElementById('admin-banned-list');
@@ -1757,16 +1678,21 @@ const AdminApp = {
         if (this.state.bannedUsers.length === 0) { container.innerHTML = '<div class="empty-state"><i class="fas fa-ban"></i><p>No banned users</p></div>'; return; }
         container.innerHTML = this.state.bannedUsers.map(user => `<div class="banned-card"><div class="banned-icon"><i class="fas fa-user-slash"></i></div><div class="banned-info"><h4>${user.firstName || 'User'}</h4><p>@${user.username || 'N/A'} • ${user.telegramId}</p><p class="reason"><strong>Reason:</strong> ${user.reason}</p><p class="date">Banned: ${Utils.formatDate(user.bannedAt, 'long')}</p></div><button class="btn btn-success btn-sm" onclick="AdminApp.unbanUser('${user.telegramId}')"><i class="fas fa-check"></i> Unban</button></div>`).join('');
     },
-    
+
     async unbanUser(telegramId) {
         if (!confirm('Unban this user?')) return;
         Utils.showLoading('Unbanning...');
-        try { await Database.unbanUser(telegramId); await TelegramBot.notifyUnban(telegramId); await this.loadAdminData(); this.renderBannedUsers(); Utils.showToast('User unbanned!', 'success'); }
-        catch (error) { Utils.showToast('Failed', 'error'); }
+        try {
+            await Database.unbanUser(telegramId);
+            await TelegramBot.notifyUnban(telegramId);
+            this.state.bannedUsers = this.state.bannedUsers.filter(u => u.telegramId !== telegramId);
+            this.renderBannedUsers();
+            Utils.showToast('User unbanned!', 'success');
+        } catch (error) { Utils.showToast('Failed', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
-    // ===== CUSTOM EMOJIS =====
+
+    // ===== CUSTOM EMOJIS (imgbb upload) =====
     renderCustomEmojis() {
         const container = document.getElementById('admin-emojis-list');
         if (!container) return;
@@ -1775,7 +1701,7 @@ const AdminApp = {
         if (emojis.length === 0) { container.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><i class="fas fa-smile-wink"></i><p>No custom emojis yet</p></div>'; return; }
         container.innerHTML = emojis.map(e => `<div class="emoji-card"><button class="delete-btn" onclick="AdminApp.deleteCustomEmoji('${e.id}')"><i class="fas fa-trash"></i></button><div class="trigger-emoji">${e.trigger}</div><div class="emoji-arrow"><i class="fas fa-arrow-down"></i></div><img class="emoji-preview" src="${e.imageUrl}" alt="${e.name}"><div class="emoji-name">${e.name || 'Unnamed'}</div></div>`).join('');
     },
-    
+
     showAddEmoji() {
         document.getElementById('emoji-name').value = '';
         document.getElementById('emoji-trigger').value = '';
@@ -1786,7 +1712,7 @@ const AdminApp = {
         this.loadEmojiPicker();
     },
     closeAddEmoji() { document.getElementById('add-emoji-modal').classList.add('hidden'); },
-    
+
     loadEmojiPicker() {
         const emojis = ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','🙃','😉','😊','😇','🥰','😍','🤩','😘','😗','😚','😙','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','😐','😑','😶','😏','😒','🙄','😬','😮','🤐','😳','🥵','🥶','😱','😨','😰','😥','😢','😭','😤','😠','😡','🤬','😈','👿','💀','☠️','💩','🤡','👻','👽','👾','🤖','❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','💕','💞','💓','💗','💖','💘','💝','⭐','🌟','✨','💫','🎵','🎶','💎','🔥','🎮','🕹️','🎲','🧩','🎯','🎰','🎪','🎭','🏆','🥇','🎖️','🏅','🎗️','✅','❌','⚡','🌀','🔮','💡','🔑','🗝️','🛡️','⚔️','🔫','💣','🧲','🪄','💰','💵','💴','💶','💷','💸','💳','🏦','🥊','🎁','🎀','🎈','🎉','🎊','🎋','⚽','☀️','🔱'];
         document.getElementById('emoji-picker-grid').innerHTML = emojis.map(e => `<div class="emoji-item" onclick="AdminApp.selectTriggerEmoji('${e}')">${e}</div>`).join('');
@@ -1794,7 +1720,7 @@ const AdminApp = {
     selectTriggerEmoji(emoji) { document.getElementById('emoji-trigger').value = emoji; this.closeEmojiPicker(); },
     showEmojiPicker() { this.loadEmojiPicker(); document.getElementById('emoji-picker-modal').classList.remove('hidden'); },
     closeEmojiPicker() { document.getElementById('emoji-picker-modal').classList.add('hidden'); },
-    
+
     async saveCustomEmoji() {
         const name = document.getElementById('emoji-name').value.trim();
         const trigger = document.getElementById('emoji-trigger').value;
@@ -1805,22 +1731,19 @@ const AdminApp = {
         if (existing) { Utils.showToast('Trigger already used', 'warning'); return; }
         Utils.showLoading('Uploading...');
         try {
-            const formData = new FormData();
-            formData.append('image', fileInput.files[0]);
-            const response = await fetch(`https://api.imgbb.com/1/upload?key=d3b0e9fd43ff0eb762987129a2f21e9c`, { method: 'POST', body: formData });
-            const result = await response.json();
-            if (!result.success) throw new Error(result.error?.message || 'Upload failed');
+            const imageUrl = await this.uploadToImgbb(fileInput.files[0]);
             const settings = this.state.settings || {};
             if (!settings.customEmojis) settings.customEmojis = [];
-            settings.customEmojis.push({ id: 'emoji_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 9), trigger, imageUrl: result.data.url, name, type: 'image', createdAt: new Date().toISOString() });
+            settings.customEmojis.push({ id: 'emoji_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 9), trigger, imageUrl, name, type: 'image', createdAt: new Date().toISOString() });
             await Database.updateSettings(settings);
             this.state.settings = settings;
-            this.closeAddEmoji(); this.renderCustomEmojis();
+            this.closeAddEmoji();
+            this.renderCustomEmojis();
             Utils.showToast('Custom emoji created!', 'success');
         } catch (error) { Utils.showToast('Failed: ' + error.message, 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     async deleteCustomEmoji(emojiId) {
         if (!confirm('Delete this custom emoji?')) return;
         Utils.showLoading('Deleting...');
@@ -1834,15 +1757,15 @@ const AdminApp = {
         } catch (error) { Utils.showToast('Failed', 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
-    // ===== SETTINGS =====
+
+    // ===== SETTINGS (imgbb upload) =====
     renderSettings() {
         const nameInput = document.getElementById('website-name');
         const currentLogo = document.getElementById('current-logo');
         if (nameInput) nameInput.value = this.state.settings.websiteName || '';
         if (this.state.settings.websiteLogo && currentLogo) { currentLogo.src = this.state.settings.websiteLogo; document.getElementById('logo-preview')?.classList.remove('hidden'); }
     },
-    
+
     async saveSettings() {
         const websiteName = document.getElementById('website-name').value.trim();
         const logoInput = document.getElementById('website-logo');
@@ -1851,12 +1774,7 @@ const AdminApp = {
             const updates = { ...this.state.settings };
             if (websiteName) updates.websiteName = websiteName;
             if (logoInput.files[0]) {
-                const formData = new FormData();
-                formData.append('image', logoInput.files[0]);
-                const response = await fetch(`https://api.imgbb.com/1/upload?key=d3b0e9fd43ff0eb762987129a2f21e9c`, { method: 'POST', body: formData });
-                const result = await response.json();
-                if (!result.success) throw new Error('Logo upload failed');
-                updates.websiteLogo = result.data.url;
+                updates.websiteLogo = await this.uploadToImgbb(logoInput.files[0]);
             }
             await Database.updateSettings(updates);
             this.state.settings = updates;
@@ -1864,7 +1782,7 @@ const AdminApp = {
         } catch (error) { Utils.showToast('Failed: ' + error.message, 'error'); }
         finally { Utils.hideLoading(); }
     },
-    
+
     // ===== DATABASE IDS =====
     renderDatabaseIds() {
         document.getElementById('main-bin-id').textContent = CONFIG.BINS.MAIN || 'Not set';
@@ -1878,7 +1796,6 @@ const AdminApp = {
 };
 
 // ===== GLOBAL FUNCTIONS =====
-
 function showAdminPage(page) { AdminApp.showAdminPage(page); }
 function filterOrders(filter) { AdminApp.filterOrders(filter); }
 function filterTopups(filter) { AdminApp.filterTopups(filter); }
@@ -1908,8 +1825,6 @@ function showEmojiPicker() { AdminApp.showEmojiPicker(); }
 function closeEmojiPicker() { AdminApp.closeEmojiPicker(); }
 function saveCustomEmoji() { AdminApp.saveCustomEmoji(); }
 function triggerEmojiUpload() { document.getElementById('emoji-file').click(); }
-
-// NEW: Bulk Import/Price functions
 function showBulkImportModal() { AdminApp.showBulkImportModal(); }
 function closeBulkImportModal() { AdminApp.closeBulkImportModal(); }
 function showBulkPriceUpdateModal() { AdminApp.showBulkPriceUpdateModal(); }
@@ -1934,21 +1849,13 @@ function toggleCheckerConfig() {
     const enabled = document.getElementById('checker-enabled').checked;
     document.getElementById('checker-json-section').classList.toggle('hidden', !enabled);
     document.getElementById('checker-test-section').classList.toggle('hidden', !enabled);
-    if (!enabled) {
-        document.getElementById('checker-json-preview').classList.add('hidden');
-        document.getElementById('checker-test-result').classList.add('hidden');
-    }
+    if (!enabled) { document.getElementById('checker-json-preview').classList.add('hidden'); document.getElementById('checker-test-result').classList.add('hidden'); }
 }
 
-function onCheckerJsonInput() {
-    AdminApp.previewCheckerConfig();
-    AdminApp.updateTestInputs();
-}
-
+function onCheckerJsonInput() { AdminApp.previewCheckerConfig(); AdminApp.updateTestInputs(); }
 function loadSampleConfig(type) { AdminApp.loadSampleConfig(type); }
 function testChecker() { AdminApp.testChecker(); }
 
-// Upload triggers
 function triggerCategoryIconUpload() { document.getElementById('category-icon').click(); }
 function triggerProductIconUpload() { document.getElementById('product-icon').click(); }
 function triggerBannerUpload() { document.getElementById('banner-image').click(); }
@@ -1956,7 +1863,7 @@ function triggerPaymentIconUpload() { document.getElementById('payment-icon').cl
 function triggerLogoUpload() { document.getElementById('website-logo').click(); }
 function triggerBroadcastImageUpload() { document.getElementById('broadcast-image').click(); }
 
-// G2Bulk API reference
+// G2Bulk API
 const G2BulkAPI = window.G2BulkAPI || {
     get URL() { return CONFIG.G2BULK.API_URL; },
     get KEY() { return CONFIG.G2BULK.API_KEY; },
@@ -1968,11 +1875,7 @@ const G2BulkAPI = window.G2BulkAPI || {
     async getBalance() { return await this.request('balance'); },
     async placeOrder(serviceId, link, quantity = 1) { return await this.request('add', { service: serviceId, link, quantity }); },
     async checkStatus(orderId) { return await this.request('status', { order: orderId }); },
-    isBalanceError(error) {
-        if (!error) return false;
-        const s = String(error).toLowerCase();
-        return ['insufficient', 'balance', 'not enough', 'funds', 'low balance'].some(k => s.includes(k));
-    }
+    isBalanceError(error) { if (!error) return false; const s = String(error).toLowerCase(); return ['insufficient', 'balance', 'not enough', 'funds', 'low balance'].some(k => s.includes(k)); }
 };
 window.G2BulkAPI = G2BulkAPI;
 
@@ -1993,20 +1896,12 @@ const GameIdChecker = window.GameIdChecker || {
                 if (config.body) {
                     let bodyStr = JSON.stringify(config.body);
                     bodyStr = bodyStr.replace(/\{\{value\}\}/gi, safeEscape(value));
-                    Object.entries(allInputValues).forEach(([name, val]) => {
-                        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                        bodyStr = bodyStr.replace(new RegExp(`\\{\\{${escaped}\\}\\}`, 'g'), safeEscape(val));
-                    });
+                    Object.entries(allInputValues).forEach(([name, val]) => { const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); bodyStr = bodyStr.replace(new RegExp(`\\{\\{${escaped}\\}\\}`, 'g'), safeEscape(val)); });
                     options.body = bodyStr;
-                } else if (config.bodyTemplate) {
-                    options.body = config.bodyTemplate.replace(/\{\{value\}\}/gi, safeEscape(value));
-                }
+                } else if (config.bodyTemplate) { options.body = config.bodyTemplate.replace(/\{\{value\}\}/gi, safeEscape(value)); }
             } else if (method === 'GET') {
                 fetchUrl = fetchUrl.replace(/\{\{value\}\}/gi, encodeURIComponent(value));
-                Object.entries(allInputValues).forEach(([name, val]) => {
-                    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    fetchUrl = fetchUrl.replace(new RegExp(`\\{\\{${escaped}\\}\\}`, 'g'), encodeURIComponent(val || ''));
-                });
+                Object.entries(allInputValues).forEach(([name, val]) => { const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); fetchUrl = fetchUrl.replace(new RegExp(`\\{\\{${escaped}\\}\\}`, 'g'), encodeURIComponent(val || '')); });
             }
             const response = await fetch(fetchUrl, options);
             const data = await response.json();
@@ -2060,11 +1955,7 @@ const CountryHelper = window.CountryHelper || {
         'TH':'🇹🇭 Thailand','TR':'🇹🇷 Turkey','UA':'🇺🇦 Ukraine','AE':'🇦🇪 UAE','GB':'🇬🇧 United Kingdom',
         'US':'🇺🇸 United States','UZ':'🇺🇿 Uzbekistan','VN':'🇻🇳 Vietnam','YE':'🇾🇪 Yemen'
     },
-    getDisplay(code) {
-        if (!code) return '';
-        code = String(code).toUpperCase().trim();
-        return this.countries[code] || `🌐 ${code}`;
-    }
+    getDisplay(code) { if (!code) return ''; code = String(code).toUpperCase().trim(); return this.countries[code] || `🌐 ${code}`; }
 };
 window.CountryHelper = CountryHelper;
 
@@ -2078,20 +1969,20 @@ document.addEventListener('DOMContentLoaded', () => {
         { input: 'broadcast-image', preview: 'broadcast-image-preview' }
     ];
     previewHandlers.forEach(({ input, preview }) => {
-        document.getElementById(input)?.addEventListener('change', async (e) => {
+        document.getElementById(input)?.addEventListener('change', (e) => {
             if (e.target.files[0]) {
                 const previewEl = document.getElementById(preview);
-                const img = await Utils.compressImage(e.target.files[0], 400, 0.8);
-                previewEl.innerHTML = `<img src="${img}" alt="Preview">`;
-                previewEl.classList.remove('hidden');
+                const reader = new FileReader();
+                reader.onload = (ev) => { previewEl.innerHTML = `<img src="${ev.target.result}" alt="Preview">`; previewEl.classList.remove('hidden'); };
+                reader.readAsDataURL(e.target.files[0]);
             }
         });
     });
-    document.getElementById('website-logo')?.addEventListener('change', async (e) => {
+    document.getElementById('website-logo')?.addEventListener('change', (e) => {
         if (e.target.files[0]) {
-            const img = await Utils.compressImage(e.target.files[0], 200, 0.9);
-            document.getElementById('current-logo').src = img;
-            document.getElementById('logo-preview').classList.remove('hidden');
+            const reader = new FileReader();
+            reader.onload = (ev) => { document.getElementById('current-logo').src = ev.target.result; document.getElementById('logo-preview').classList.remove('hidden'); };
+            reader.readAsDataURL(e.target.files[0]);
         }
     });
     AdminApp.init();
