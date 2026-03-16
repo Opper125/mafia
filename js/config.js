@@ -35,19 +35,19 @@ const CONFIG = {
         // ---- Account 1 (မူရင်း - ရှိပြီးသား data) ----
         {
             name: 'Database 1 (Original)',
-            apiKey: '$2a$10$qIofQ05vovEVKj99fILB3OtPttEzZylUmfXXKwdomNVuP/LhlYSBS',
+            apiKey: '$2a$10$RWfTAiUGUEO4lBOCMVEo5.hrI6RfQs71zA7xM3JIIo0a6bKJYZzs2',
             bins: {
-                MAIN: '697f241743b1c97be95cfcd2',
-                USERS: '697f2418ae596e708f08d3f4',
-                PRODUCTS: '69b85e50b7ec241ddc74462b',
-                CATEGORIES: '697f2419ae596e708f08d3f6',
-                ORDERS: '697f2419d0ea881f4098683a',
-                TOPUPS: '697f241aae596e708f08d3fa',
-                BANNERS: '697f241aae596e708f08d3fd',
-                PAYMENTS: '697f241b43b1c97be95cfcdb',
-                INPUT_TABLES: '697f241b43b1c97be95cfcdd',
-                IMAGES: '697f241dd0ea881f4098683a',
-                BANNED: '697f241c43b1c97be95cfce0'
+                MAIN: '69b86ecbaa77b81da9ee549b',
+                USERS: '69b86eccb7ec241ddc747fcc',
+                PRODUCTS: '69b86ed1c3097a1dd52f3047',
+                CATEGORIES: '69b86ed0c3097a1dd52f3042',
+                ORDERS: '69b86ecdaa77b81da9ee54a7',
+                TOPUPS: '69b86ecfb7ec241ddc747fd3',
+                BANNERS: '69b86ed2c3097a1dd52f304a',
+                PAYMENTS: '69b86ed3b7ec241ddc747fe5',
+                INPUT_TABLES: '69b86ed4c3097a1dd52f3055',
+                IMAGES: '69b86ed6aa77b81da9ee54c9',
+                BANNED: '69b86ed5aa77b81da9ee54c3'
             }
         },
 
