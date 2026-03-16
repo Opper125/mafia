@@ -245,19 +245,44 @@
                 <div class="categories-list" id="admin-categories-list"></div>
             </div>
 
-            <!-- Products Page -->
+            <!-- Products Page (UPDATED - Bulk Actions Added) -->
             <div id="admin-page-products" class="admin-page hidden">
                 <div class="page-header">
                     <h1><i class="fas fa-box"></i> Products</h1>
-                    <button class="add-btn" onclick="showAddProduct()">
-                        <i class="fas fa-plus"></i> Add Product
-                    </button>
+                    <div class="header-actions-group">
+                        <button class="add-btn" onclick="showAddProduct()">
+                            <i class="fas fa-plus"></i> Add Product
+                        </button>
+                        <button class="add-btn bulk-import-btn" onclick="showBulkImportModal()">
+                            <i class="fas fa-cloud-download-alt"></i> Bulk Import G2Bulk
+                        </button>
+                        <button class="add-btn bulk-price-btn" onclick="showBulkPriceUpdateModal()">
+                            <i class="fas fa-dollar-sign"></i> Bulk Price Update
+                        </button>
+                    </div>
                 </div>
                 <div class="products-filter">
                     <select id="filter-category" onchange="filterProductsByCategory()">
                         <option value="all">All Categories</option>
                     </select>
                 </div>
+
+                <!-- Bulk Actions Bar (shown when products selected) -->
+                <div id="bulk-actions-bar" class="bulk-actions-bar hidden">
+                    <div class="bulk-select-info">
+                        <label class="checkbox-label bulk-select-all-label">
+                            <input type="checkbox" id="select-all-products" onchange="AdminApp.toggleSelectAllProducts()">
+                            <span>Select All</span>
+                        </label>
+                        <span class="selected-count" id="selected-products-count">0 selected</span>
+                    </div>
+                    <div class="bulk-action-buttons">
+                        <button class="btn btn-danger btn-sm" onclick="AdminApp.bulkDeleteProducts()">
+                            <i class="fas fa-trash"></i> Delete Selected
+                        </button>
+                    </div>
+                </div>
+
                 <div class="products-list" id="admin-products-list"></div>
             </div>
 
@@ -319,7 +344,7 @@
                 </div>
             </div>
 
-            <!-- ★★★ Input Tables Page (NEW - was missing) ★★★ -->
+            <!-- Input Tables Page -->
             <div id="admin-page-input-tables" class="admin-page hidden">
                 <div class="page-header">
                     <h1><i class="fas fa-keyboard"></i> Input Tables</h1>
@@ -649,6 +674,213 @@
         </div>
     </div>
 
+    <!-- ★★★ BULK IMPORT FROM G2BULK MODAL (NEW) ★★★ -->
+    <div id="bulk-import-modal" class="modal hidden">
+        <div class="modal-overlay" onclick="closeBulkImportModal()"></div>
+        <div class="modal-content extra-large">
+            <div class="modal-header">
+                <h3><i class="fas fa-cloud-download-alt"></i> Bulk Import from G2Bulk</h3>
+                <button class="close-btn" onclick="closeBulkImportModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <!-- Step 1: Select Category -->
+                <div class="bulk-import-section">
+                    <div class="section-title">
+                        <span class="step-badge">1</span>
+                        <h4>Select Target Category</h4>
+                    </div>
+                    <div class="form-group">
+                        <select id="bulk-import-category" onchange="AdminApp.onBulkImportCategoryChange()">
+                            <option value="">-- Select Category --</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Step 2: Load & Select G2Bulk Products -->
+                <div class="bulk-import-section">
+                    <div class="section-title">
+                        <span class="step-badge">2</span>
+                        <h4>Select G2Bulk Products</h4>
+                    </div>
+                    <div class="bulk-import-search-row">
+                        <div class="search-input-group">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="bulk-import-search" placeholder="Search G2Bulk services..." oninput="AdminApp.filterBulkImportServices()">
+                        </div>
+                        <select id="bulk-import-g2bulk-category" onchange="AdminApp.filterBulkImportServices()">
+                            <option value="all">All G2Bulk Categories</option>
+                        </select>
+                        <button class="btn btn-sm" onclick="AdminApp.loadBulkImportServices()">
+                            <i class="fas fa-sync-alt"></i> Load Services
+                        </button>
+                    </div>
+                    <div class="bulk-select-controls">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="bulk-import-select-all" onchange="AdminApp.toggleBulkImportSelectAll()">
+                            <span>Select All Visible</span>
+                        </label>
+                        <span class="selected-count" id="bulk-import-selected-count">0 selected</span>
+                    </div>
+                    <div class="bulk-import-services-list" id="bulk-import-services-list">
+                        <div class="empty-state">
+                            <i class="fas fa-cloud-download-alt"></i>
+                            <p>Click "Load Services" or search to find G2Bulk products</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Upload Icon -->
+                <div class="bulk-import-section">
+                    <div class="section-title">
+                        <span class="step-badge">3</span>
+                        <h4>Upload Product Icon (One for All)</h4>
+                    </div>
+                    <div class="form-group">
+                        <div class="upload-area compact" onclick="document.getElementById('bulk-import-icon').click()">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p>Click to upload icon (applies to all selected products)</p>
+                            <input type="file" id="bulk-import-icon" accept="image/*" hidden onchange="AdminApp.previewBulkImportIcon(event)">
+                        </div>
+                        <div id="bulk-import-icon-preview" class="image-preview hidden"></div>
+                    </div>
+                </div>
+
+                <!-- Step 4: Exchange Rate & Auto Calculate -->
+                <div class="bulk-import-section">
+                    <div class="section-title">
+                        <span class="step-badge">4</span>
+                        <h4>Set Exchange Rate (USD → MMK)</h4>
+                    </div>
+                    <div class="exchange-rate-box">
+                        <div class="rate-input-group">
+                            <label>1 USD =</label>
+                            <input type="number" id="bulk-import-rate" placeholder="e.g., 4150" value="4150" oninput="AdminApp.recalculateBulkImportPrices()">
+                            <span class="rate-currency">MMK</span>
+                        </div>
+                        <div class="rate-info">
+                            <i class="fas fa-info-circle"></i>
+                            <span>Each product's USD rate will be multiplied by this rate to get MMK price</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 5: Preview Selected Products with Calculated Prices -->
+                <div class="bulk-import-section">
+                    <div class="section-title">
+                        <span class="step-badge">5</span>
+                        <h4>Preview & Confirm</h4>
+                    </div>
+                    <div class="bulk-import-preview" id="bulk-import-preview">
+                        <div class="empty-state small">
+                            <p>Select products above to see price preview</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="modal-footer-actions">
+                    <button class="btn btn-secondary" onclick="closeBulkImportModal()">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    <button class="btn btn-primary btn-lg" id="bulk-import-save-btn" onclick="AdminApp.saveBulkImport()" disabled>
+                        <i class="fas fa-cloud-download-alt"></i> Import <span id="bulk-import-save-count">0</span> Products
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ★★★ BULK PRICE UPDATE MODAL (NEW) ★★★ -->
+    <div id="bulk-price-update-modal" class="modal hidden">
+        <div class="modal-overlay" onclick="closeBulkPriceUpdateModal()"></div>
+        <div class="modal-content extra-large">
+            <div class="modal-header">
+                <h3><i class="fas fa-dollar-sign"></i> Bulk Price Update</h3>
+                <button class="close-btn" onclick="closeBulkPriceUpdateModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <!-- Select Category -->
+                <div class="bulk-import-section">
+                    <div class="section-title">
+                        <span class="step-badge">1</span>
+                        <h4>Select Category</h4>
+                    </div>
+                    <div class="form-group">
+                        <select id="bulk-price-category" onchange="AdminApp.onBulkPriceCategoryChange()">
+                            <option value="">-- Select Category --</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Select Products -->
+                <div class="bulk-import-section">
+                    <div class="section-title">
+                        <span class="step-badge">2</span>
+                        <h4>Select Products to Update</h4>
+                    </div>
+                    <div class="bulk-select-controls">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="bulk-price-select-all" onchange="AdminApp.toggleBulkPriceSelectAll()">
+                            <span>Select All</span>
+                        </label>
+                        <span class="selected-count" id="bulk-price-selected-count">0 selected</span>
+                    </div>
+                    <div class="bulk-price-products-list" id="bulk-price-products-list">
+                        <div class="empty-state small">
+                            <p>Select a category to load products</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- New Exchange Rate -->
+                <div class="bulk-import-section">
+                    <div class="section-title">
+                        <span class="step-badge">3</span>
+                        <h4>Set New Exchange Rate (USD → MMK)</h4>
+                    </div>
+                    <div class="exchange-rate-box">
+                        <div class="rate-input-group">
+                            <label>1 USD =</label>
+                            <input type="number" id="bulk-price-rate" placeholder="e.g., 4100" oninput="AdminApp.recalculateBulkPrices()">
+                            <span class="rate-currency">MMK</span>
+                        </div>
+                        <div class="rate-info">
+                            <i class="fas fa-info-circle"></i>
+                            <span>Products with G2Bulk service will have their MMK price recalculated using this rate</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Price Preview -->
+                <div class="bulk-import-section">
+                    <div class="section-title">
+                        <span class="step-badge">4</span>
+                        <h4>Price Preview (Old → New)</h4>
+                    </div>
+                    <div class="bulk-price-preview" id="bulk-price-preview">
+                        <div class="empty-state small">
+                            <p>Enter new rate to see price changes</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="modal-footer-actions">
+                    <button class="btn btn-secondary" onclick="closeBulkPriceUpdateModal()">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    <button class="btn btn-primary btn-lg" id="bulk-price-save-btn" onclick="AdminApp.saveBulkPriceUpdate()" disabled>
+                        <i class="fas fa-save"></i> Update <span id="bulk-price-save-count">0</span> Prices
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Add Banner Modal -->
     <div id="add-banner-modal" class="modal hidden">
         <div class="modal-overlay" onclick="closeAddBanner()"></div>
@@ -686,7 +918,7 @@
         </div>
     </div>
 
-    <!-- ★★★ Add Input Table Modal (COMPLETELY REDESIGNED - JSON Config System) ★★★ -->
+    <!-- Add Input Table Modal -->
     <div id="add-input-table-modal" class="modal hidden">
         <div class="modal-overlay" onclick="closeAddInputTable()"></div>
         <div class="modal-content large">
@@ -730,10 +962,8 @@
                     <small>Auto verify player ID with game server before purchase</small>
                 </div>
 
-                <!-- JSON Config Section (shown when checker enabled) -->
+                <!-- JSON Config Section -->
                 <div id="checker-json-section" class="checker-json-section hidden">
-
-                    <!-- Sample Config Buttons -->
                     <div class="form-group">
                         <label><i class="fas fa-gamepad"></i> Quick Templates</label>
                         <div class="sample-config-grid">
@@ -771,7 +1001,6 @@
                         </small>
                     </div>
 
-                    <!-- JSON Config Textarea -->
                     <div class="form-group">
                         <label><i class="fas fa-code"></i> Checker JSON Config <span class="required">*</span></label>
                         <textarea id="checker-json-config" 
@@ -804,12 +1033,10 @@
                         </div>
                     </div>
 
-                    <!-- Parsed Preview -->
                     <div id="checker-json-preview" class="checker-json-preview hidden"></div>
-
                 </div>
 
-                <!-- Test Section (shown when checker enabled) -->
+                <!-- Test Section -->
                 <div id="checker-test-section" class="checker-test-section hidden">
                     <div class="form-section-divider small">
                         <div class="divider-line"></div>
@@ -821,7 +1048,6 @@
                         <label>Test Game ID</label>
                         <div class="test-checker-inputs">
                             <input type="text" id="checker-test-value" placeholder="Enter test ID (e.g., 123456789)">
-                            <!-- Extra test inputs will be dynamically added here -->
                             <div id="checker-test-extra-inputs" class="test-extra-inputs hidden"></div>
                         </div>
                         <button class="btn btn-primary btn-sm test-run-btn" onclick="testChecker()">
