@@ -3191,3 +3191,639 @@ code {
 .btn-info:hover { background: rgba(59, 130, 246, 0.25); }
 .btn-warning { background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); }
 .btn-warning:hover { background: rgba(245, 158, 11, 0.25); }
+
+/* ===== BULK IMPORT & BULK PRICE UPDATE STYLES ===== */
+
+/* Header Actions Group */
+.header-actions-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.bulk-import-btn {
+    background: linear-gradient(135deg, #10b981, #059669) !important;
+}
+
+.bulk-price-btn {
+    background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+}
+
+/* Extra Large Modal */
+.modal-content.extra-large {
+    max-width: 900px;
+    width: 95%;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+/* Bulk Import Sections */
+.bulk-import-section {
+    margin-bottom: 24px;
+    padding: 16px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+}
+
+.section-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.section-title h4 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: #e2e8f0;
+}
+
+.step-badge {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #7c3aed, #6d28d9);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+/* Bulk Import Search Row */
+.bulk-import-search-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.bulk-import-search-row .search-input-group {
+    flex: 1;
+    min-width: 200px;
+}
+
+.bulk-import-search-row select {
+    min-width: 180px;
+}
+
+/* Bulk Select Controls */
+.bulk-select-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: rgba(124, 58, 237, 0.1);
+    border: 1px solid rgba(124, 58, 237, 0.2);
+    border-radius: 8px;
+    margin-bottom: 12px;
+}
+
+.selected-count {
+    font-size: 13px;
+    color: #a78bfa;
+    font-weight: 600;
+}
+
+/* Bulk Import Services List */
+.bulk-import-services-list {
+    max-height: 350px;
+    overflow-y: auto;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.bulk-import-service-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.bulk-import-service-item:hover {
+    background: rgba(124, 58, 237, 0.08);
+}
+
+.bulk-import-service-item.selected {
+    background: rgba(124, 58, 237, 0.15);
+    border-left: 3px solid #7c3aed;
+}
+
+.bulk-import-service-item:last-child {
+    border-bottom: none;
+}
+
+.bulk-service-checkbox {
+    flex-shrink: 0;
+}
+
+.bulk-service-checkbox input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #7c3aed;
+    cursor: pointer;
+}
+
+.bulk-service-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.bulk-service-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #e2e8f0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.bulk-service-details {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+}
+
+.bulk-service-price {
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.bulk-service-price .price-usd {
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+.bulk-service-price .price-mmk {
+    font-size: 14px;
+    font-weight: 700;
+    color: #10b981;
+}
+
+/* Exchange Rate Box */
+.exchange-rate-box {
+    background: rgba(124, 58, 237, 0.08);
+    border: 1px solid rgba(124, 58, 237, 0.2);
+    border-radius: 12px;
+    padding: 16px;
+}
+
+.rate-input-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.rate-input-group label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #e2e8f0;
+    white-space: nowrap;
+}
+
+.rate-input-group input[type="number"] {
+    flex: 1;
+    max-width: 200px;
+    padding: 10px 14px;
+    border: 2px solid rgba(124, 58, 237, 0.3);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.3);
+    color: #fff;
+    font-size: 18px;
+    font-weight: 700;
+    text-align: center;
+}
+
+.rate-input-group input[type="number"]:focus {
+    border-color: #7c3aed;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2);
+}
+
+.rate-currency {
+    font-size: 16px;
+    font-weight: 700;
+    color: #a78bfa;
+}
+
+.rate-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+.rate-info i {
+    color: #7c3aed;
+}
+
+/* Preview Table */
+.preview-table {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    overflow: hidden;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.preview-table-header {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    padding: 10px 14px;
+    background: rgba(124, 58, 237, 0.15);
+    font-size: 12px;
+    font-weight: 600;
+    color: #a78bfa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.preview-table-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 13px;
+    color: #e2e8f0;
+    align-items: center;
+}
+
+.preview-table-row:nth-child(even) {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.preview-table-row:last-child {
+    border-bottom: none;
+}
+
+.preview-table-row .col-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 500;
+}
+
+.preview-table-row .col-mmk,
+.preview-table-row .col-new {
+    font-weight: 700;
+    color: #10b981;
+}
+
+.preview-table-row .col-old {
+    color: #94a3b8;
+}
+
+/* Bulk Price Update - 5 column grid */
+.bulk-price-preview .preview-table-header,
+.bulk-price-preview .preview-table-row {
+    grid-template-columns: 2fr 0.8fr 1fr 1fr 1fr;
+}
+
+.col-diff {
+    font-weight: 700;
+    font-size: 12px;
+}
+
+.col-diff.price-up {
+    color: #ef4444;
+}
+
+.col-diff.price-down {
+    color: #10b981;
+}
+
+.col-diff.price-same {
+    color: #94a3b8;
+}
+
+.preview-summary {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 14px;
+    background: rgba(124, 58, 237, 0.08);
+    border-top: 1px solid rgba(124, 58, 237, 0.15);
+    font-size: 13px;
+    color: #a78bfa;
+    font-weight: 600;
+}
+
+/* Upload Area Compact */
+.upload-area.compact {
+    padding: 16px;
+}
+
+.upload-area.compact i {
+    font-size: 24px;
+}
+
+.upload-area.compact p {
+    font-size: 13px;
+}
+
+/* Bulk Actions Bar (Products Page) */
+.bulk-actions-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    background: rgba(124, 58, 237, 0.1);
+    border: 1px solid rgba(124, 58, 237, 0.25);
+    border-radius: 12px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.bulk-select-info {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.bulk-select-all-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #e2e8f0;
+}
+
+.bulk-select-all-label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #7c3aed;
+}
+
+.bulk-action-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+/* Product Card - with checkbox */
+.product-card {
+    position: relative;
+}
+
+.product-select-checkbox {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 2;
+}
+
+.product-select-checkbox input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    accent-color: #7c3aed;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.product-card.selected {
+    border-color: rgba(124, 58, 237, 0.5) !important;
+    background: rgba(124, 58, 237, 0.08) !important;
+    box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.2);
+}
+
+/* Bulk Price Product List */
+.bulk-price-products-list {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.bulk-price-product-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.bulk-price-product-item:hover {
+    background: rgba(124, 58, 237, 0.08);
+}
+
+.bulk-price-product-item.selected {
+    background: rgba(124, 58, 237, 0.15);
+    border-left: 3px solid #7c3aed;
+}
+
+.bulk-price-product-item:last-child {
+    border-bottom: none;
+}
+
+.bulk-price-product-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.rate-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border-radius: 6px;
+}
+
+.service-id-badge.manual {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+}
+
+/* Button Large */
+.btn-lg {
+    padding: 14px 28px !important;
+    font-size: 15px !important;
+    font-weight: 700 !important;
+}
+
+/* Modal Footer Actions */
+.modal-footer-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding-top: 20px;
+    margin-top: 20px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Empty State Small */
+.empty-state.small {
+    padding: 24px;
+}
+
+.empty-state.small p {
+    font-size: 13px;
+}
+
+/* Load More Text */
+.load-more-text {
+    text-align: center;
+    padding: 12px;
+    color: #94a3b8;
+    font-size: 13px;
+}
+
+/* Bulk Import Preview */
+.bulk-import-preview,
+.bulk-price-preview {
+    min-height: 60px;
+}
+
+/* Scrollbar for bulk lists */
+.bulk-import-services-list::-webkit-scrollbar,
+.bulk-price-products-list::-webkit-scrollbar,
+.preview-table::-webkit-scrollbar {
+    width: 6px;
+}
+
+.bulk-import-services-list::-webkit-scrollbar-track,
+.bulk-price-products-list::-webkit-scrollbar-track,
+.preview-table::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 3px;
+}
+
+.bulk-import-services-list::-webkit-scrollbar-thumb,
+.bulk-price-products-list::-webkit-scrollbar-thumb,
+.preview-table::-webkit-scrollbar-thumb {
+    background: rgba(124, 58, 237, 0.3);
+    border-radius: 3px;
+}
+
+.bulk-import-services-list::-webkit-scrollbar-thumb:hover,
+.bulk-price-products-list::-webkit-scrollbar-thumb:hover,
+.preview-table::-webkit-scrollbar-thumb:hover {
+    background: rgba(124, 58, 237, 0.5);
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .modal-content.extra-large {
+        width: 100%;
+        max-height: 95vh;
+        border-radius: 16px 16px 0 0;
+    }
+
+    .header-actions-group {
+        width: 100%;
+    }
+
+    .header-actions-group .add-btn {
+        flex: 1;
+        font-size: 12px;
+        padding: 8px 12px;
+    }
+
+    .bulk-import-search-row {
+        flex-direction: column;
+    }
+
+    .bulk-import-search-row select {
+        min-width: 100%;
+    }
+
+    .preview-table-header,
+    .preview-table-row {
+        grid-template-columns: 1.5fr 0.7fr 1fr 0.8fr !important;
+        font-size: 11px;
+        padding: 8px 10px;
+    }
+
+    .bulk-price-preview .preview-table-header,
+    .bulk-price-preview .preview-table-row {
+        grid-template-columns: 1.5fr 0.6fr 0.8fr 0.8fr 0.8fr !important;
+        font-size: 10px;
+    }
+
+    .rate-input-group {
+        flex-wrap: wrap;
+    }
+
+    .rate-input-group input[type="number"] {
+        max-width: 150px;
+    }
+
+    .bulk-actions-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .bulk-select-info {
+        justify-content: space-between;
+    }
+
+    .bulk-action-buttons {
+        justify-content: flex-end;
+    }
+
+    .modal-footer-actions {
+        flex-direction: column;
+    }
+
+    .modal-footer-actions .btn {
+        width: 100%;
+    }
+
+    .exchange-rate-box {
+        padding: 12px;
+    }
+
+    .bulk-import-section {
+        padding: 12px;
+    }
+
+    .section-title h4 {
+        font-size: 14px;
+    }
+
+    .preview-summary {
+        flex-direction: column;
+        gap: 4px;
+        font-size: 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .preview-table-header .col-service,
+    .preview-table-row .col-service {
+        display: none;
+    }
+
+    .preview-table-header,
+    .preview-table-row {
+        grid-template-columns: 2fr 1fr 1fr !important;
+    }
+
+    .bulk-price-preview .preview-table-header .col-usd,
+    .bulk-price-preview .preview-table-row .col-usd {
+        display: none;
+    }
+
+    .bulk-price-preview .preview-table-header,
+    .bulk-price-preview .preview-table-row {
+        grid-template-columns: 1.5fr 1fr 1fr 0.8fr !important;
+    }
+    }
