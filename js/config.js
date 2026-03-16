@@ -34,7 +34,7 @@ const CONFIG = {
     JSONBIN_ACCOUNTS: [
         // ---- Account 1 (မူရင်း - ရှိပြီးသား data) ----
         {
-            name: 'Database 1 (Original)',
+            name: 'Database 2',
             apiKey: '$2a$10$RWfTAiUGUEO4lBOCMVEo5.hrI6RfQs71zA7xM3JIIo0a6bKJYZzs2',
             bins: {
                 MAIN: '69b86ecbaa77b81da9ee549b',
@@ -51,6 +51,23 @@ const CONFIG = {
             }
         },
 
+        {
+            name: 'Database 1 (Original)',
+            apiKey: '$2a$10$RWfTAiUGUEO4lBOCMVEo5.hrI6RfQs71zA7xM3JIIo0a6bKJYZzs2',
+            bins: {
+                MAIN: '697f241743b1c97be95cfcd2',
+                USERS: '697f2418ae596e708f08d3f4',
+                PRODUCTS: '697f241843b1c97be95cfcd5',
+                CATEGORIES: '697f2419ae596e708f08d3f6',
+                ORDERS: '697f2419d0ea881f40986834',
+                TOPUPS: '697f241aae596e708f08d3fa',
+                BANNERS: '697f241aae596e708f08d3fd',
+                PAYMENTS: '697f241b43b1c97be95cfcdb',
+                INPUT_TABLES: '697f241b43b1c97be95cfcdd',
+                IMAGES: '697f241dd0ea881f4098683a',
+                BANNED: '697f241c43b1c97be95cfce0'
+            }
+        },
         // ---- Account 2 (အသစ် - ဒီမှာ bins ID အသစ်ထည့်ပါ) ----
         // jsonbin.io အကောင့်သစ်ဖွင့်ပြီး Console code run ပြီးရင်
         // ရလာတဲ့ bins ID တွေ ဒီမှာထည့်ပါ
