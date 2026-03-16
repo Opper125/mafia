@@ -1157,46 +1157,80 @@ const G2BulkAPI = {
         return await this.request('status', { orders: orderIds.join(',') }, 2);
     },
     
-    // ===== Enhanced: Service Requirements & Account Verification =====
-    async getServiceRequirements(serviceId) {
+    // ===== Get Services by Category (G2Bulk API) =====
+    async getServicesByCategory(categoryName) {
         try {
-            const result = await this.request('service_requirements', { service: serviceId }, 2);
-            return result;
+            const result = await this.request('services', { category: categoryName }, 2);
+            console.log(`[v0] G2Bulk services for category "${categoryName}":`, result);
+            return Array.isArray(result) ? result : [];
         } catch (error) {
-            console.warn(`Failed to get requirements for service ${serviceId}:`, error);
-            return { requirements: [] };
+            console.warn(`Failed to get services for category ${categoryName}:`, error);
+            return [];
         }
     },
     
-    async verifyAccount(serviceId, accountId) {
+    // ===== Get All Services (G2Bulk API) =====
+    async getAllServices() {
         try {
-            const result = await this.request('verify_account', { service: serviceId, account: accountId }, 2);
-            return result;
+            const result = await this.request('services', {}, 2);
+            console.log('[v0] G2Bulk all services:', result);
+            return Array.isArray(result) ? result : [];
         } catch (error) {
-            console.warn(`Failed to verify account for service ${serviceId}:`, error);
-            return { valid: false, error: error.message };
+            console.warn('Failed to get all services:', error);
+            return [];
         }
     },
     
-    async getAccountInfo(serviceId, accountId) {
-        try {
-            const result = await this.request('account_info', { service: serviceId, account: accountId }, 2);
-            return result;
-        } catch (error) {
-            console.warn(`Failed to get account info for service ${serviceId}:`, error);
-            return null;
+    // ===== Parse Service Requirements (Client-side based on service name) =====
+    parseServiceRequirements(serviceName, category) {
+        const requirements = [];
+        const serviceInfo = `${serviceName} ${category}`.toLowerCase();
+        
+        // Telegram products - only need username/account
+        if (serviceInfo.includes('telegram')) {
+            requirements.push({
+                id: 'telegram_account',
+                name: 'Telegram Username',
+                placeholder: 'Enter your Telegram username (without @)',
+                type: 'text',
+                required: true,
+                formatLink: (value) => value
+            });
+            return requirements;
         }
+        
+        // Game products - need Game ID
+        requirements.push({
+            id: 'game_id',
+            name: 'Game ID',
+            placeholder: 'Enter your in-game ID',
+            type: 'text',
+            required: true,
+            description: 'Your unique player ID'
+        });
+        
+        // Some games require server ID
+        const serverIdGames = ['pubg', 'mobile legends', 'ml', 'freefire', 'ff', 'lost ark', 'lineage', 'ragnarok'];
+        if (serverIdGames.some(game => serviceInfo.includes(game))) {
+            requirements.push({
+                id: 'server_id',
+                name: 'Server ID (Optional)',
+                placeholder: 'e.g., 2001',
+                type: 'text',
+                required: false,
+                description: 'Some games use Server ID|Player ID format'
+            });
+        }
+        
+        return requirements;
     },
     
-    // ===== Category Sync (Admin) =====
-    async syncCategories(categories) {
-        try {
-            const result = await this.request('sync_categories', { categories: categories }, 2);
-            return result;
-        } catch (error) {
-            console.warn('Failed to sync categories:', error);
-            return { success: false, error: error.message };
+    // ===== Build Link for G2Bulk API =====
+    buildLink(gameId, serverId) {
+        if (serverId && serverId.trim()) {
+            return `${gameId}|${serverId}`;
         }
+        return gameId;
     },
     
     isBalanceError(error) {
@@ -2093,38 +2127,9 @@ const App = {
         
         categoryTitle.textContent = this.state.currentCategory.name;
         
-        // ===== NEW: Enhance input fields based on service requirements =====
-        let enhancedInputTables = [...(this.state.inputTables || [])];
-        
-        // If products have G2Bulk services and no input fields configured, get requirements from API
-        const g2bulkProducts = this.state.products?.filter(p => p.serviceId) || [];
-        if (g2bulkProducts.length > 0 && (!this.state.inputTables || this.state.inputTables.length === 0)) {
-            try {
-                // Get requirements from the first service to determine what fields are needed
-                const firstService = g2bulkProducts[0].serviceId;
-                console.log('[v0] Fetching requirements for service:', firstService);
-                
-                const reqResult = await G2BulkAPI.getServiceRequirements(firstService);
-                if (reqResult && reqResult.requirements && Array.isArray(reqResult.requirements)) {
-                    enhancedInputTables = reqResult.requirements.map((req, idx) => ({
-                        id: `g2bulk-${idx}`,
-                        name: req.name || `Field ${idx + 1}`,
-                        placeholder: req.placeholder || `Enter ${req.name || 'value'}`,
-                        type: req.type || 'text',
-                        checkerEnabled: req.isVerifiable === true,
-                        checkerConfig: req.checker_config,
-                        required: req.required !== false,
-                        autoGenerated: true
-                    }));
-                    console.log('[v0] Generated input fields from API:', enhancedInputTables);
-                }
-            } catch (error) {
-                console.warn('[v0] Failed to fetch service requirements, using defaults:', error);
-            }
-        }
-        
-        if (enhancedInputTables.length > 0) {
-            inputSection.innerHTML = enhancedInputTables.map(table => `
+        // ===== Render Input Fields from inputTables =====
+        if (this.state.inputTables?.length > 0) {
+            inputSection.innerHTML = this.state.inputTables.map(table => `
                 <div class="input-group" data-table-id="${table.id}">
                     <label>${table.name}${table.required ? ' <span class="required">*</span>' : ''}</label>
                     <div class="input-with-checker">
@@ -2136,12 +2141,11 @@ const App = {
                                ${table.required ? 'required' : ''}>
                         ${table.checkerEnabled ? `
                             <button class="checker-btn" onclick="App.checkGameId('${table.id}')" title="Verify">
-                                <i class="fas fa-check"></i>
+                                <i class="fas fa-search"></i>
                             </button>
                         ` : ''}
                     </div>
                     <div id="checker-result-${table.id}" class="checker-result hidden"></div>
-                    ${table.type === 'telegram' ? '<div class="field-hint"><i class="fas fa-info-circle"></i> Your verified Telegram account will be used</div>' : ''}
                 </div>
             `).join('');
             inputSection.classList.remove('hidden');
@@ -2443,85 +2447,6 @@ const App = {
         const balance = this.state.user.balance || 0;
         const remaining = balance - price;
         
-        // ===== NEW: Account Verification for G2Bulk Services =====
-        let accountVerificationHTML = '';
-        let verifyAccountBeforePurchase = false;
-        
-        if (product.serviceId && this.state.inputTables?.length > 0) {
-            // Get game ID field (usually the first input)
-            const gameIdField = this.state.inputTables[0];
-            const gameIdValue = this.state.inputValues[gameIdField.name]?.trim();
-            
-            if (gameIdValue) {
-                try {
-                    Utils.showLoading('Verifying account...');
-                    verifyAccountBeforePurchase = true;
-                    
-                    const verifyResult = await G2BulkAPI.verifyAccount(product.serviceId, gameIdValue);
-                    
-                    if (verifyResult && verifyResult.valid) {
-                        const accountInfo = verifyResult.accountInfo || {};
-                        let accountDetails = '';
-                        
-                        if (accountInfo.nickname) {
-                            accountDetails += `<div class="account-detail"><span class="detail-label"><i class="fas fa-gamepad"></i> Nickname:</span><span class="detail-value">${accountInfo.nickname}</span></div>`;
-                        }
-                        if (accountInfo.level) {
-                            accountDetails += `<div class="account-detail"><span class="detail-label"><i class="fas fa-level-up"></i> Level:</span><span class="detail-value">${accountInfo.level}</span></div>`;
-                        }
-                        if (accountInfo.country) {
-                            accountDetails += `<div class="account-detail"><span class="detail-label"><i class="fas fa-globe"></i> Country:</span><span class="detail-value">${CountryHelper.getDisplay(accountInfo.country)}</span></div>`;
-                        }
-                        if (accountInfo.status) {
-                            accountDetails += `<div class="account-detail"><span class="detail-label"><i class="fas fa-info-circle"></i> Status:</span><span class="detail-value">${accountInfo.status}</span></div>`;
-                        }
-                        
-                        accountVerificationHTML = `
-                            <div class="account-verification-section valid">
-                                <div class="verification-header">
-                                    <i class="fas fa-check-circle"></i>
-                                    <span>Account Verified</span>
-                                </div>
-                                <div class="account-details">
-                                    ${accountDetails}
-                                </div>
-                            </div>
-                        `;
-                    } else {
-                        const errorMsg = verifyResult?.error || 'Account verification failed';
-                        accountVerificationHTML = `
-                            <div class="account-verification-section invalid">
-                                <div class="verification-header error">
-                                    <i class="fas fa-times-circle"></i>
-                                    <span>Account Verification Failed</span>
-                                </div>
-                                <div class="verification-error">
-                                    <p>${errorMsg}</p>
-                                    <p class="small">Please check your account ID and try again</p>
-                                </div>
-                            </div>
-                        `;
-                    }
-                } catch (error) {
-                    console.error('Account verification error:', error);
-                    accountVerificationHTML = `
-                        <div class="account-verification-section error">
-                            <div class="verification-header error">
-                                <i class="fas fa-exclamation-triangle"></i>
-                                <span>Verification Error</span>
-                            </div>
-                            <div class="verification-error">
-                                <p>Unable to verify account at this time</p>
-                                <p class="small">Please try again later</p>
-                            </div>
-                        </div>
-                    `;
-                } finally {
-                    Utils.hideLoading();
-                }
-            }
-        }
-        
         let checkerInfoHTML = '';
         const checkerTable = this.state.inputTables.find(t => t.checkerEnabled);
         if (checkerTable && this.state.checkerResults[checkerTable.id]) {
@@ -2541,7 +2466,6 @@ const App = {
                     ${product.serviceId ? '<span class="auto-badge"><i class="fas fa-bolt"></i> Auto Delivery</span>' : ''}
                 </div>
             </div>
-            ${accountVerificationHTML}
             ${checkerInfoHTML}
         `;
         
@@ -2603,30 +2527,6 @@ const App = {
         }
         
         const product = this.state.selectedProduct;
-
-        // ── Step 0: Re-verify account at purchase time (if G2Bulk service) ────
-        if (product.serviceId && this.state.inputTables?.length > 0) {
-            try {
-                const gameIdField = this.state.inputTables[0];
-                const gameIdValue = this.state.inputValues[gameIdField.name]?.trim();
-                
-                if (gameIdValue) {
-                    console.log('[v0] Re-verifying account before purchase...');
-                    const verifyResult = await G2BulkAPI.verifyAccount(product.serviceId, gameIdValue);
-                    
-                    if (!verifyResult || !verifyResult.valid) {
-                        Utils.showToast('❌ Account verification failed. Account no longer exists or is invalid.', 'error');
-                        TelegramApp.hapticFeedback('notification', 'error');
-                        this.closeBuyModal();
-                        return;
-                    }
-                }
-            } catch (error) {
-                console.error('Account verification before purchase failed:', error);
-                Utils.showToast('❌ Unable to verify account. Please try again.', 'error');
-                return;
-            }
-        }
 
         // ── Step 1: Re-check product still exists ────────────────
         const currentProduct = this.state.products.find(p => p.id === product.id);
