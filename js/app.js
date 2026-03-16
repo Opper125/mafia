@@ -2081,7 +2081,7 @@ const App = {
                 ImageCache.preloadAll(categoryImageUrls);
             }
             
-            await this.renderCategoryPage();
+            this.renderCategoryPage();
             this.showPage('category');
             TelegramApp.showBackButton();
 
@@ -2119,7 +2119,7 @@ const App = {
         `;
     },
     
-    async renderCategoryPage() {
+    renderCategoryPage() {
         const categoryTitle = document.getElementById('category-title');
         const inputSection = document.getElementById('input-section');
         const productsGrid = document.getElementById('products-grid');
@@ -2405,7 +2405,7 @@ const App = {
         }
     },
     
-    async openBuyModal() {
+    openBuyModal() {
         if (this.state.inputTables?.length > 0) {
             for (const table of this.state.inputTables) {
                 if (!this.state.inputValues[table.name]?.trim()) {
