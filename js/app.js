@@ -1,4 +1,4 @@
-်တက်// ===== Main Application - G2Bulk Integrated + Enhanced Game ID Checker =====
+// ===== Main Application - G2Bulk Integrated + Enhanced Game ID Checker =====
 // ===== + AGGRESSIVE IMAGE CACHING SYSTEM =====
 // ===== + REALTIME SYNC SYSTEM (JSONBin.io Polling - No Firebase) =====
 // ===== + SERVER-SIDE BALANCE VALIDATION (JSONBin.io) =====
