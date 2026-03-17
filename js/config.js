@@ -2,12 +2,12 @@
 
 const CONFIG = {
     // Telegram Bot Configuration
-    BOT_TOKEN: '8235749023:AAG95jVQaXjtPqRXU5KZyJyWXEk5sUrIybg',
+    BOT_TOKEN: '88235749023:AAGtAB7nH6RWXEe4flQfnTy7vfNabRWUVC8',
     BOT_USERNAME: 'mafia_gameshopbot',
     
     // Admin Configuration
     ADMIN_TELEGRAM_ID: '1538232799',
-    ADMIN_USERNAME: 'OPPER101',
+    ADMIN_USERNAME: 'OPPER990',
     ADMIN_TELEGRAM: '7972272875',
     ADMIN_USERNAME: 'SEEPB',
 
