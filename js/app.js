@@ -2,6 +2,9 @@
 // ===== + AGGRESSIVE IMAGE CACHING SYSTEM =====
 // ===== + REALTIME SYNC SYSTEM (JSONBin.io Polling - No Firebase) =====
 // ===== + SERVER-SIDE BALANCE VALIDATION (JSONBin.io) =====
+// ===== + DYNAMIC INPUT FIELDS (Based on G2Bulk Requirements) =====
+// ===== + SERVICE-TO-CATEGORY MAPPING =====
+// ===== + MULTI-CHECKPOINT PURCHASE VALIDATION =====
 
 // ============================================================
 // ===== IMAGE CACHE SYSTEM — Instant Load & Offline Ready ====
@@ -1157,48 +1160,6 @@ const G2BulkAPI = {
         return await this.request('status', { orders: orderIds.join(',') }, 2);
     },
     
-    // ===== Enhanced: Service Requirements & Account Verification =====
-    async getServiceRequirements(serviceId) {
-        try {
-            const result = await this.request('service_requirements', { service: serviceId }, 2);
-            return result;
-        } catch (error) {
-            console.warn(`Failed to get requirements for service ${serviceId}:`, error);
-            return { requirements: [] };
-        }
-    },
-    
-    async verifyAccount(serviceId, accountId) {
-        try {
-            const result = await this.request('verify_account', { service: serviceId, account: accountId }, 2);
-            return result;
-        } catch (error) {
-            console.warn(`Failed to verify account for service ${serviceId}:`, error);
-            return { valid: false, error: error.message };
-        }
-    },
-    
-    async getAccountInfo(serviceId, accountId) {
-        try {
-            const result = await this.request('account_info', { service: serviceId, account: accountId }, 2);
-            return result;
-        } catch (error) {
-            console.warn(`Failed to get account info for service ${serviceId}:`, error);
-            return null;
-        }
-    },
-    
-    // ===== Category Sync (Admin) =====
-    async syncCategories(categories) {
-        try {
-            const result = await this.request('sync_categories', { categories: categories }, 2);
-            return result;
-        } catch (error) {
-            console.warn('Failed to sync categories:', error);
-            return { success: false, error: error.message };
-        }
-    },
-    
     isBalanceError(error) {
         if (!error) return false;
         const errorStr = String(error).toLowerCase();
@@ -1303,6 +1264,241 @@ const G2BulkAvailability = {
     }
 };
 window.G2BulkAvailability = G2BulkAvailability;
+
+
+// ===== DYNAMIC INPUT SYSTEM - Renders fields based on product requirements =====
+const DynamicInputSystem = {
+    buildDynamicInputs(product) {
+        if (!product || !product.requiredFields || product.requiredFields.length === 0) {
+            return '';
+        }
+
+        let html = '';
+        product.requiredFields.forEach((field, idx) => {
+            const fieldId = field.name || field.id || `field-${idx}`;
+            const isRequired = field.required !== false;
+            const helpText = field.help || field.description || '';
+            const fieldType = field.type || 'text';
+
+            switch (fieldType) {
+                case 'select':
+                    html += `
+                        <div class="input-group" data-field="${fieldId}">
+                            <label>${field.label || field.name}${isRequired ? ' <span class="required">*</span>' : ''}</label>
+                            <select id="input-${fieldId}" 
+                                    onchange="DynamicInputSystem.onFieldChange('${fieldId}', this.value)"
+                                    ${isRequired ? 'required' : ''}>
+                                <option value="">${field.placeholder || 'Select ' + (field.label || field.name)}</option>
+                                ${(field.options || []).map(opt => `<option value="${opt}">${opt}</option>`).join('')}
+                            </select>
+                            ${helpText ? `<small class="field-help">${helpText}</small>` : ''}
+                            <div class="field-error hidden" id="error-${fieldId}"></div>
+                        </div>
+                    `;
+                    break;
+                    
+                case 'email':
+                    html += `
+                        <div class="input-group" data-field="${fieldId}">
+                            <label>${field.label || field.name}${isRequired ? ' <span class="required">*</span>' : ''}</label>
+                            <input type="email" 
+                                   id="input-${fieldId}" 
+                                   placeholder="${field.placeholder || 'example@email.com'}"
+                                   oninput="DynamicInputSystem.onFieldChange('${fieldId}', this.value)"
+                                   ${isRequired ? 'required' : ''}>
+                            ${helpText ? `<small class="field-help">${helpText}</small>` : ''}
+                            <div class="field-error hidden" id="error-${fieldId}"></div>
+                        </div>
+                    `;
+                    break;
+                    
+                case 'tel':
+                case 'phone':
+                    html += `
+                        <div class="input-group" data-field="${fieldId}">
+                            <label>${field.label || field.name}${isRequired ? ' <span class="required">*</span>' : ''}</label>
+                            <input type="tel" 
+                                   id="input-${fieldId}" 
+                                   placeholder="${field.placeholder || '+1234567890'}"
+                                   oninput="DynamicInputSystem.onFieldChange('${fieldId}', this.value)"
+                                   ${isRequired ? 'required' : ''}>
+                            ${helpText ? `<small class="field-help">${helpText}</small>` : ''}
+                            <div class="field-error hidden" id="error-${fieldId}"></div>
+                        </div>
+                    `;
+                    break;
+
+                default:
+                    html += `
+                        <div class="input-group" data-field="${fieldId}">
+                            <label>${field.label || field.name}${isRequired ? ' <span class="required">*</span>' : ''}</label>
+                            <div class="input-with-checker">
+                                <input type="text" 
+                                       id="input-${fieldId}" 
+                                       placeholder="${field.placeholder || 'Enter ' + (field.label || field.name)}"
+                                       oninput="DynamicInputSystem.onFieldChange('${fieldId}', this.value)"
+                                       ${isRequired ? 'required' : ''}>
+                                ${field.hasValidator ? `
+                                    <button class="checker-btn" onclick="DynamicInputSystem.verifyField('${fieldId}')" title="Verify">
+                                        <i class="fas fa-search"></i>
+                                    </button>
+                                ` : ''}
+                            </div>
+                            ${helpText ? `<small class="field-help">${helpText}</small>` : ''}
+                            <div class="field-error hidden" id="error-${fieldId}"></div>
+                            <div class="field-verification hidden" id="verify-${fieldId}"></div>
+                        </div>
+                    `;
+            }
+        });
+
+        return html;
+    },
+
+    onFieldChange(fieldId, value) {
+        App.state.inputValues[fieldId] = value;
+        
+        const errorEl = document.getElementById(`error-${fieldId}`);
+        if (errorEl && value && value.trim()) {
+            errorEl.classList.add('hidden');
+            errorEl.innerHTML = '';
+        }
+
+        const field = this.getFieldConfig(fieldId);
+        if (field && field.hasValidator && value && value.trim()) {
+            GameIdChecker.autoCheck(fieldId, () => {
+                this.verifyField(fieldId);
+            }, 600);
+        }
+
+        App.updateBuyButton();
+    },
+
+    async verifyField(fieldId) {
+        const field = this.getFieldConfig(fieldId);
+        if (!field || !field.validator) return;
+
+        const value = document.getElementById(`input-${fieldId}`)?.value?.trim();
+        if (!value) {
+            this.showFieldError(fieldId, `Please enter ${field.label || field.name}`);
+            return;
+        }
+
+        const verifyEl = document.getElementById(`verify-${fieldId}`);
+        if (verifyEl) {
+            verifyEl.innerHTML = '<div class="field-verification-loading"><div class="spinner"></div><span>Verifying...</span></div>';
+            verifyEl.classList.remove('hidden');
+        }
+
+        try {
+            const allInputs = {};
+            Object.entries(App.state.inputValues).forEach(([k, v]) => {
+                allInputs[k] = v;
+            });
+
+            const result = await GameIdChecker.check(field.validator, value, allInputs);
+
+            if (result && result.valid) {
+                if (!App.state.checkerResults) App.state.checkerResults = {};
+                App.state.checkerResults[fieldId] = result;
+
+                let detailsHtml = '<div class="field-verification-success"><i class="fas fa-check-circle"></i> Verified';
+                if (result.nickname) detailsHtml += `<br><strong>${result.nickname}</strong>`;
+                if (result.playerName) detailsHtml += `<br><strong>${result.playerName}</strong>`;
+                if (result.country) detailsHtml += `<br>${CountryHelper.getDisplay(result.country)}`;
+                if (result.rank) detailsHtml += `<br>Rank: ${result.rank}`;
+                if (result.level) detailsHtml += `<br>Level: ${result.level}`;
+                detailsHtml += '</div>';
+
+                if (verifyEl) {
+                    verifyEl.innerHTML = detailsHtml;
+                    verifyEl.classList.remove('hidden');
+                }
+
+                this.clearFieldError(fieldId);
+                const inputEl = document.getElementById(`input-${fieldId}`);
+                if (inputEl) inputEl.classList.add('verified');
+
+                App.updateBuyButton();
+            } else {
+                const errorMsg = field.errorMessage || 'Account not found. Please check and try again.';
+                this.showFieldError(fieldId, errorMsg);
+
+                if (verifyEl) {
+                    verifyEl.innerHTML = `<div class="field-verification-failed"><i class="fas fa-times-circle"></i> ${errorMsg}</div>`;
+                    verifyEl.classList.remove('hidden');
+                }
+
+                if (App.state.checkerResults) {
+                    App.state.checkerResults[fieldId] = null;
+                }
+            }
+        } catch (error) {
+            console.error('Field verification error:', error);
+            this.showFieldError(fieldId, 'Verification failed. Please try again.');
+
+            if (verifyEl) {
+                verifyEl.innerHTML = '<div class="field-verification-failed"><i class="fas fa-exclamation-triangle"></i> Verification error</div>';
+                verifyEl.classList.remove('hidden');
+            }
+        }
+    },
+
+    showFieldError(fieldId, message) {
+        const errorEl = document.getElementById(`error-${fieldId}`);
+        if (errorEl) {
+            errorEl.textContent = message;
+            errorEl.classList.remove('hidden');
+        }
+
+        const inputEl = document.getElementById(`input-${fieldId}`);
+        if (inputEl) inputEl.classList.add('error');
+    },
+
+    clearFieldError(fieldId) {
+        const errorEl = document.getElementById(`error-${fieldId}`);
+        if (errorEl) {
+            errorEl.textContent = '';
+            errorEl.classList.add('hidden');
+        }
+
+        const inputEl = document.getElementById(`input-${fieldId}`);
+        if (inputEl) inputEl.classList.remove('error');
+    },
+
+    getFieldConfig(fieldId) {
+        if (!App.state.selectedProduct) return null;
+        const fields = App.state.selectedProduct.requiredFields || [];
+        return fields.find(f => (f.name || f.id) === fieldId);
+    },
+
+    validateAllFields() {
+        const fields = App.state.selectedProduct?.requiredFields || [];
+        let allValid = true;
+
+        fields.forEach(field => {
+            const fieldId = field.name || field.id;
+            const isRequired = field.required !== false;
+            const value = App.state.inputValues[fieldId];
+
+            if (isRequired && (!value || !value.trim())) {
+                this.showFieldError(fieldId, `${field.label || field.name} is required`);
+                allValid = false;
+            } else if (value && field.pattern) {
+                const regex = new RegExp(field.pattern);
+                if (!regex.test(value)) {
+                    this.showFieldError(fieldId, field.patternError || `Invalid ${field.label || field.name}`);
+                    allValid = false;
+                }
+            } else {
+                this.clearFieldError(fieldId);
+            }
+        });
+
+        return allValid;
+    }
+};
+window.DynamicInputSystem = DynamicInputSystem;
 
 
 // ===== Order Checker System (Auto Processing) =====
@@ -2047,7 +2243,7 @@ const App = {
                 ImageCache.preloadAll(categoryImageUrls);
             }
             
-            await this.renderCategoryPage();
+            this.renderCategoryPage();
             this.showPage('category');
             TelegramApp.showBackButton();
 
@@ -2085,7 +2281,7 @@ const App = {
         `;
     },
     
-    async renderCategoryPage() {
+    renderCategoryPage() {
         const categoryTitle = document.getElementById('category-title');
         const inputSection = document.getElementById('input-section');
         const productsGrid = document.getElementById('products-grid');
@@ -2093,57 +2289,21 @@ const App = {
         
         categoryTitle.textContent = this.state.currentCategory.name;
         
-        // ===== NEW: Enhance input fields based on service requirements =====
-        let enhancedInputTables = [...(this.state.inputTables || [])];
-        
-        // If products have G2Bulk services and no input fields configured, get requirements from API
-        const g2bulkProducts = this.state.products?.filter(p => p.serviceId) || [];
-        if (g2bulkProducts.length > 0 && (!this.state.inputTables || this.state.inputTables.length === 0)) {
-            try {
-                // Get requirements from the first service to determine what fields are needed
-                const firstService = g2bulkProducts[0].serviceId;
-                console.log('[v0] Fetching requirements for service:', firstService);
-                
-                const reqResult = await G2BulkAPI.getServiceRequirements(firstService);
-                if (reqResult && reqResult.requirements && Array.isArray(reqResult.requirements)) {
-                    enhancedInputTables = reqResult.requirements.map((req, idx) => ({
-                        id: `g2bulk-${idx}`,
-                        name: req.name || `Field ${idx + 1}`,
-                        placeholder: req.placeholder || `Enter ${req.name || 'value'}`,
-                        type: req.type || 'text',
-                        checkerEnabled: req.isVerifiable === true,
-                        checkerConfig: req.checker_config,
-                        required: req.required !== false,
-                        autoGenerated: true
-                    }));
-                    console.log('[v0] Generated input fields from API:', enhancedInputTables);
-                }
-            } catch (error) {
-                console.warn('[v0] Failed to fetch service requirements, using defaults:', error);
-            }
-        }
-        
-        if (enhancedInputTables.length > 0) {
-            inputSection.innerHTML = enhancedInputTables.map(table => `
-                <div class="input-group" data-table-id="${table.id}">
-                    <label>${table.name}${table.required ? ' <span class="required">*</span>' : ''}</label>
-                    <div class="input-with-checker">
-                        <input type="text" 
-                               id="input-${table.id}" 
-                               placeholder="${table.placeholder}"
-                               oninput="App.onInputChange('${table.id}', '${table.name}', this.value)"
-                               autocomplete="off"
-                               ${table.required ? 'required' : ''}>
-                        ${table.checkerEnabled ? `
-                            <button class="checker-btn" onclick="App.checkGameId('${table.id}')" title="Verify">
-                                <i class="fas fa-check"></i>
-                            </button>
-                        ` : ''}
-                    </div>
-                    <div id="checker-result-${table.id}" class="checker-result hidden"></div>
-                    ${table.type === 'telegram' ? '<div class="field-hint"><i class="fas fa-info-circle"></i> Your verified Telegram account will be used</div>' : ''}
-                </div>
-            `).join('');
+        if (this.state.inputTables?.length > 0) {
+            inputSection.innerHTML = this.state.inputTables.map(table => {
+                const html = DynamicInputSystem.buildDynamicInputs({
+                    requiredFields: [{
+                        name: table.name,
+                        label: table.name,
+                        placeholder: table.placeholder,
+                        type: table.fieldType || 'text',
+                        hasValidator: table.checkerEnabled,
+                        validator: table.checkerConfig
+                    }]
+                });
+                return html;
+            }).join('');
+            
             inputSection.classList.remove('hidden');
         } else {
             inputSection.innerHTML = '';
@@ -2172,170 +2332,6 @@ const App = {
         this.updateBuyButton();
     },
     
-    onInputChange(tableId, tableName, value) {
-        this.state.inputValues[tableName] = value;
-        
-        const checkerTable = this.state.inputTables.find(t => t.checkerEnabled && t.checkerConfig);
-        if (!checkerTable) return;
-        
-        let config = checkerTable.checkerConfig;
-        if (typeof config === 'string') {
-            try { config = JSON.parse(config); } catch(e) { return; }
-        }
-        
-        const checkerInputEl = document.getElementById(`input-${checkerTable.id}`);
-        const checkerInputValue = checkerInputEl?.value?.trim();
-        if (!checkerInputValue) {
-            const resultDiv = document.getElementById(`checker-result-${checkerTable.id}`);
-            if (resultDiv) {
-                resultDiv.classList.add('hidden');
-                resultDiv.innerHTML = '';
-            }
-            return;
-        }
-        
-        const requiredInputs = GameIdChecker.getRequiredInputs(config);
-        for (const reqInput of requiredInputs) {
-            if (!this.state.inputValues[reqInput]?.trim()) return;
-        }
-        
-        GameIdChecker.autoCheck(checkerTable.id, () => {
-            this.checkGameId(checkerTable.id);
-        }, 800);
-    },
-    
-    async checkGameId(tableId) {
-        const table = this.state.inputTables.find(t => t.id === tableId);
-        if (!table || !table.checkerEnabled || !table.checkerConfig) return;
-        
-        const input = document.getElementById(`input-${tableId}`);
-        const resultDiv = document.getElementById(`checker-result-${tableId}`);
-        const value = input?.value?.trim();
-        
-        if (!value) {
-            Utils.showToast(`Please enter ${table.name}`, 'warning');
-            return;
-        }
-        
-        resultDiv.innerHTML = `
-            <div class="checker-card loading">
-                <div class="checker-loading-content">
-                    <div class="checker-spinner"></div>
-                    <span>Verifying Game ID...</span>
-                </div>
-            </div>
-        `;
-        resultDiv.classList.remove('hidden');
-        resultDiv.className = 'checker-result show';
-        
-        try {
-            const result = await GameIdChecker.check(
-                table.checkerConfig, 
-                value, 
-                this.state.inputValues
-            );
-            
-            if (result && result.valid) {
-                this.state.checkerResults[tableId] = result;
-                
-                let infoRows = '';
-                
-                if (result.nickname) {
-                    infoRows += `
-                        <div class="checker-info-row">
-                            <div class="checker-info-icon"><i class="fas fa-gamepad"></i></div>
-                            <div class="checker-info-data">
-                                <span class="checker-info-label">Nickname</span>
-                                <strong class="checker-info-value nickname">${result.nickname}</strong>
-                            </div>
-                        </div>
-                    `;
-                }
-                
-                if (result.country) {
-                    infoRows += `
-                        <div class="checker-info-row">
-                            <div class="checker-info-icon"><i class="fas fa-globe-asia"></i></div>
-                            <div class="checker-info-data">
-                                <span class="checker-info-label">Country</span>
-                                <strong class="checker-info-value">${CountryHelper.getDisplay(result.country)}</strong>
-                            </div>
-                        </div>
-                    `;
-                }
-                
-                if (!result.nickname && !result.country) {
-                    infoRows = `
-                        <div class="checker-info-row">
-                            <div class="checker-info-icon"><i class="fas fa-check"></i></div>
-                            <div class="checker-info-data">
-                                <strong class="checker-info-value">Valid Game ID</strong>
-                            </div>
-                        </div>
-                    `;
-                }
-                
-                resultDiv.innerHTML = `
-                    <div class="checker-card valid">
-                        <div class="checker-status-bar valid">
-                            <i class="fas fa-check-circle"></i>
-                            <span>Account Verified</span>
-                        </div>
-                        <div class="checker-info-body">
-                            ${infoRows}
-                        </div>
-                    </div>
-                `;
-                resultDiv.className = 'checker-result show valid';
-                TelegramApp.hapticFeedback('notification', 'success');
-                
-            } else {
-                this.state.checkerResults[tableId] = null;
-                
-                let errorMsg = 'Invalid Game ID. Please check and try again.';
-                let config = table.checkerConfig;
-                if (typeof config === 'string') {
-                    try { config = JSON.parse(config); } catch(e) {}
-                }
-                if (config && config.errorMessage) {
-                    errorMsg = config.errorMessage;
-                }
-                
-                resultDiv.innerHTML = `
-                    <div class="checker-card invalid">
-                        <div class="checker-status-bar invalid">
-                            <i class="fas fa-times-circle"></i>
-                            <span>Account Not Found</span>
-                        </div>
-                        <div class="checker-error-body">
-                            <p>${errorMsg}</p>
-                        </div>
-                    </div>
-                `;
-                resultDiv.className = 'checker-result show invalid';
-                TelegramApp.hapticFeedback('notification', 'error');
-            }
-        } catch (error) {
-            this.state.checkerResults[tableId] = null;
-            resultDiv.innerHTML = `
-                <div class="checker-card error">
-                    <div class="checker-status-bar error">
-                        <i class="fas fa-exclamation-triangle"></i>
-                        <span>Verification Failed</span>
-                    </div>
-                    <div class="checker-error-body">
-                        <p>Unable to verify at this time. Please try again later.</p>
-                    </div>
-                </div>
-            `;
-            resultDiv.className = 'checker-result show error';
-        }
-    },
-    
-    updateInputValue(tableId, tableName, value) {
-        this.state.inputValues[tableName] = value;
-    },
-    
     selectProduct(productId) {
         TelegramApp.hapticFeedback('selection');
         const product = this.state.products.find(p => p.id === productId);
@@ -2343,7 +2339,7 @@ const App = {
 
         // ✅ Prevent selecting unavailable G2Bulk service
         if (product.serviceId && G2BulkAvailability.isServiceAvailable(product.serviceId) === false) {
-            Utils.showToast('⛔ This item is temporarily unavailable', 'warning');
+            Utils.showToast('This item is temporarily unavailable', 'warning');
             TelegramApp.hapticFeedback('notification', 'warning');
             return;
         }
@@ -2401,7 +2397,7 @@ const App = {
         }
     },
     
-    async openBuyModal() {
+    openBuyModal() {
         if (this.state.inputTables?.length > 0) {
             for (const table of this.state.inputTables) {
                 if (!this.state.inputValues[table.name]?.trim()) {
@@ -2419,7 +2415,7 @@ const App = {
 
         // ✅ Block if G2Bulk service missing/unavailable
         if (this.state.selectedProduct.serviceId && G2BulkAvailability.isServiceAvailable(this.state.selectedProduct.serviceId) === false) {
-            Utils.showToast('⛔ This item is temporarily unavailable', 'error');
+            Utils.showToast('This item is temporarily unavailable', 'error');
             TelegramApp.hapticFeedback('notification', 'error');
             this.state.selectedProduct = null;
             this.updateBuyButton();
@@ -2429,7 +2425,7 @@ const App = {
         // Re-verify product still exists
         const currentProduct = this.state.products.find(p => p.id === this.state.selectedProduct.id);
         if (!currentProduct) {
-            Utils.showToast('⚠️ This product is no longer available', 'error');
+            Utils.showToast('This product is no longer available', 'error');
             this.state.selectedProduct = null;
             this.updateBuyButton();
             return;
@@ -2442,85 +2438,6 @@ const App = {
         const price = product.discountedPrice || product.price;
         const balance = this.state.user.balance || 0;
         const remaining = balance - price;
-        
-        // ===== NEW: Account Verification for G2Bulk Services =====
-        let accountVerificationHTML = '';
-        let verifyAccountBeforePurchase = false;
-        
-        if (product.serviceId && this.state.inputTables?.length > 0) {
-            // Get game ID field (usually the first input)
-            const gameIdField = this.state.inputTables[0];
-            const gameIdValue = this.state.inputValues[gameIdField.name]?.trim();
-            
-            if (gameIdValue) {
-                try {
-                    Utils.showLoading('Verifying account...');
-                    verifyAccountBeforePurchase = true;
-                    
-                    const verifyResult = await G2BulkAPI.verifyAccount(product.serviceId, gameIdValue);
-                    
-                    if (verifyResult && verifyResult.valid) {
-                        const accountInfo = verifyResult.accountInfo || {};
-                        let accountDetails = '';
-                        
-                        if (accountInfo.nickname) {
-                            accountDetails += `<div class="account-detail"><span class="detail-label"><i class="fas fa-gamepad"></i> Nickname:</span><span class="detail-value">${accountInfo.nickname}</span></div>`;
-                        }
-                        if (accountInfo.level) {
-                            accountDetails += `<div class="account-detail"><span class="detail-label"><i class="fas fa-level-up"></i> Level:</span><span class="detail-value">${accountInfo.level}</span></div>`;
-                        }
-                        if (accountInfo.country) {
-                            accountDetails += `<div class="account-detail"><span class="detail-label"><i class="fas fa-globe"></i> Country:</span><span class="detail-value">${CountryHelper.getDisplay(accountInfo.country)}</span></div>`;
-                        }
-                        if (accountInfo.status) {
-                            accountDetails += `<div class="account-detail"><span class="detail-label"><i class="fas fa-info-circle"></i> Status:</span><span class="detail-value">${accountInfo.status}</span></div>`;
-                        }
-                        
-                        accountVerificationHTML = `
-                            <div class="account-verification-section valid">
-                                <div class="verification-header">
-                                    <i class="fas fa-check-circle"></i>
-                                    <span>Account Verified</span>
-                                </div>
-                                <div class="account-details">
-                                    ${accountDetails}
-                                </div>
-                            </div>
-                        `;
-                    } else {
-                        const errorMsg = verifyResult?.error || 'Account verification failed';
-                        accountVerificationHTML = `
-                            <div class="account-verification-section invalid">
-                                <div class="verification-header error">
-                                    <i class="fas fa-times-circle"></i>
-                                    <span>Account Verification Failed</span>
-                                </div>
-                                <div class="verification-error">
-                                    <p>${errorMsg}</p>
-                                    <p class="small">Please check your account ID and try again</p>
-                                </div>
-                            </div>
-                        `;
-                    }
-                } catch (error) {
-                    console.error('Account verification error:', error);
-                    accountVerificationHTML = `
-                        <div class="account-verification-section error">
-                            <div class="verification-header error">
-                                <i class="fas fa-exclamation-triangle"></i>
-                                <span>Verification Error</span>
-                            </div>
-                            <div class="verification-error">
-                                <p>Unable to verify account at this time</p>
-                                <p class="small">Please try again later</p>
-                            </div>
-                        </div>
-                    `;
-                } finally {
-                    Utils.hideLoading();
-                }
-            }
-        }
         
         let checkerInfoHTML = '';
         const checkerTable = this.state.inputTables.find(t => t.checkerEnabled);
@@ -2541,7 +2458,6 @@ const App = {
                     ${product.serviceId ? '<span class="auto-badge"><i class="fas fa-bolt"></i> Auto Delivery</span>' : ''}
                 </div>
             </div>
-            ${accountVerificationHTML}
             ${checkerInfoHTML}
         `;
         
@@ -2604,34 +2520,17 @@ const App = {
         
         const product = this.state.selectedProduct;
 
-        // ── Step 0: Re-verify account at purchase time (if G2Bulk service) ────
-        if (product.serviceId && this.state.inputTables?.length > 0) {
-            try {
-                const gameIdField = this.state.inputTables[0];
-                const gameIdValue = this.state.inputValues[gameIdField.name]?.trim();
-                
-                if (gameIdValue) {
-                    console.log('[v0] Re-verifying account before purchase...');
-                    const verifyResult = await G2BulkAPI.verifyAccount(product.serviceId, gameIdValue);
-                    
-                    if (!verifyResult || !verifyResult.valid) {
-                        Utils.showToast('❌ Account verification failed. Account no longer exists or is invalid.', 'error');
-                        TelegramApp.hapticFeedback('notification', 'error');
-                        this.closeBuyModal();
-                        return;
-                    }
-                }
-            } catch (error) {
-                console.error('Account verification before purchase failed:', error);
-                Utils.showToast('❌ Unable to verify account. Please try again.', 'error');
-                return;
-            }
+        // ── Step 1: Validate all dynamic input fields ──────────────
+        if (!DynamicInputSystem.validateAllFields()) {
+            Utils.showToast('Please fill all required fields correctly', 'warning');
+            TelegramApp.hapticFeedback('notification', 'warning');
+            return;
         }
 
-        // ── Step 1: Re-check product still exists ────────────────
+        // ── Step 2: Re-check product still exists ────────────────
         const currentProduct = this.state.products.find(p => p.id === product.id);
         if (!currentProduct) {
-            Utils.showToast('⚠️ This product is no longer available', 'error');
+            Utils.showToast('This product is no longer available', 'error');
             this.closeBuyModal();
             this.state.selectedProduct = null;
             this.updateBuyButton();
@@ -2644,7 +2543,7 @@ const App = {
                 await G2BulkAvailability.refresh(false);
             } catch (e) {}
             if (G2BulkAvailability.isServiceAvailable(currentProduct.serviceId) === false) {
-                Utils.showToast('⛔ This item is temporarily unavailable', 'error');
+                Utils.showToast('This item is temporarily unavailable', 'error');
                 TelegramApp.hapticFeedback('notification', 'error');
                 this.closeBuyModal();
                 this.state.selectedProduct = null;
@@ -2655,13 +2554,13 @@ const App = {
 
         const price = currentProduct.discountedPrice || currentProduct.price;
         
-        // ── Step 2: ★★★ Read FRESH balance from JSONBin.io ★★★ ──
+        // ── Step 3: ★★★ Read FRESH balance from JSONBin.io ★★★ ──
         let freshBalance;
         try {
             const freshUser = await Database.getUserByTelegramId(this.state.user.telegramId);
             
             if (!freshUser) {
-                Utils.showToast('❌ User account not found', 'error');
+                Utils.showToast('User account not found', 'error');
                 return;
             }
             
@@ -2671,15 +2570,15 @@ const App = {
             this.state.user = { ...this.state.user, ...freshUser };
             this.updateHeader();
             
-            console.log(`🔒 Server balance check: ${freshBalance} (need: ${price})`);
+            console.log(`Balance verification: ${freshBalance} (need: ${price})`);
             
         } catch (fetchError) {
-            console.error('❌ Failed to verify balance:', fetchError);
-            Utils.showToast('❌ Unable to verify balance. Please try again.', 'error');
+            console.error('Failed to verify balance:', fetchError);
+            Utils.showToast('Unable to verify balance. Please try again.', 'error');
             return;
         }
 
-        // ── Step 3: Check balance using SERVER value ────────────
+        // ── Step 4: Check balance using SERVER value ────────────
         if (freshBalance < price) {
             TelegramApp.hapticFeedback('notification', 'error');
             
@@ -2697,11 +2596,11 @@ const App = {
                 return;
             }
             
-            Utils.showToast(`Insufficient balance! Actual: ${Utils.formatCurrency(freshBalance, 'MMK')} (${CONFIG.MAX_FAILED_PURCHASE_ATTEMPTS - attempts} attempts left)`, 'error');
+            Utils.showToast(`Insufficient balance! Need: ${Utils.formatCurrency(price, 'MMK')} (${CONFIG.MAX_FAILED_PURCHASE_ATTEMPTS - attempts} attempts left)`, 'error');
             return;
         }
         
-        // ── Step 4: Proceed with purchase ────────────────────────
+        // ── Step 5: Proceed with purchase ────────────────────────
         this.state.isProcessingPurchase = true;
         Utils.showLoading('Processing order...');
         TelegramApp.hapticFeedback('impact', 'heavy');
@@ -2741,7 +2640,7 @@ const App = {
                         });
                         
                         this.closeBuyModal();
-                        Utils.showToast('✅ Order placed! Auto-processing...', 'success');
+                        Utils.showToast('Order placed! Auto-processing...', 'success');
                         try { await TelegramBot.notifyNewAutoOrder(order, this.state.user, apiResult.order); } catch(e) { console.warn('Notify error:', e); }
                         
                     } else if (apiResult && apiResult.error) {
@@ -2753,7 +2652,7 @@ const App = {
                             });
                             
                             this.closeBuyModal();
-                            Utils.showToast('⏳ Order queued. Will process when API balance available.', 'info');
+                            Utils.showToast('Order queued. Will process when API balance available.', 'info');
                             try { await TelegramBot.notifyOrderQueued(order, this.state.user); } catch(e) { console.warn('Notify error:', e); }
                             
                         } else {
@@ -2770,7 +2669,7 @@ const App = {
                             });
                             
                             this.closeBuyModal();
-                            Utils.showToast('❌ Order failed: ' + apiResult.error + '. Balance refunded.', 'error');
+                            Utils.showToast('Order failed: ' + apiResult.error + '. Balance refunded.', 'error');
                             try { await TelegramBot.notifyOrderFailed(order, apiResult.error); } catch(e) { console.warn('Notify error:', e); }
                         }
                     } else {
@@ -2782,7 +2681,7 @@ const App = {
                         });
 
                         this.closeBuyModal();
-                        Utils.showToast('⏳ Order queued. Will auto retry.', 'info');
+                        Utils.showToast('Order queued. Will auto retry.', 'info');
                         try { await TelegramBot.notifyOrderQueued(order, this.state.user); } catch(e) { console.warn('Notify error:', e); }
                     }
                 } catch (apiError) {
@@ -2797,7 +2696,7 @@ const App = {
                         });
 
                         this.closeBuyModal();
-                        Utils.showToast('⏳ Temporary API issue. Order queued & will auto retry.', 'info');
+                        Utils.showToast('Temporary API issue. Order queued & will auto retry.', 'info');
                         try { await TelegramBot.notifyOrderQueued(order, this.state.user); } catch(e) { console.warn('Notify error:', e); }
                     } else {
                         // Non-transient -> refund + fail
@@ -2813,13 +2712,13 @@ const App = {
                         });
                         
                         this.closeBuyModal();
-                        Utils.showToast('❌ Connection error. Balance refunded.', 'error');
+                        Utils.showToast('Connection error. Balance refunded.', 'error');
                         try { await TelegramBot.notifyOrderFailed(order, apiError.message); } catch(e) { console.warn('Notify error:', e); }
                     }
                 }
             } else {
                 this.closeBuyModal();
-                Utils.showToast('📦 Order placed! Awaiting processing.', 'success');
+                Utils.showToast('Order placed! Awaiting processing.', 'success');
                 try { await TelegramBot.notifyNewOrder(order, this.state.user); } catch(e) { console.warn('Notify error:', e); }
             }
             
@@ -2838,9 +2737,9 @@ const App = {
                 try {
                     await Database.updateUserBalance(this.state.user.telegramId, price, 'add');
                     balanceRefunded = true;
-                    console.log('🔄 Emergency refund completed');
+                    console.log('Emergency refund completed');
                 } catch(refundError) {
-                    console.error('❌ Emergency refund failed:', refundError);
+                    console.error('Emergency refund failed:', refundError);
                 }
             }
             
@@ -2965,15 +2864,15 @@ const App = {
     
     getStatusText(status) {
         const map = {
-            'pending':    '⏳ Pending',
-            'processing': '🔄 Processing',
-            'completed':  '✅ Completed',
-            'failed':     '❌ Failed',
-            'queued':     '📋 Queued',
-            'partial':    '⚠️ Partial',
-            'canceled':   '🚫 Canceled',
-            'approved':   '✅ Completed',
-            'rejected':   '❌ Rejected'
+            'pending':    'Pending',
+            'processing': 'Processing',
+            'completed':  'Completed',
+            'failed':     'Failed',
+            'queued':     'Queued',
+            'partial':    'Partial',
+            'canceled':   'Canceled',
+            'approved':   'Completed',
+            'rejected':   'Rejected'
         };
         return map[status] || status;
     },
@@ -3153,7 +3052,7 @@ async function openTopupModalHandler() {
 function selectPayment(paymentId) {
     const payment = App.state.payments.find(p => p.id === paymentId);
     if (!payment) {
-        Utils.showToast('⚠️ Payment method not available', 'warning');
+        Utils.showToast('Payment method not available', 'warning');
         return;
     }
     App.state.selectedPayment = payment;
@@ -3242,7 +3141,7 @@ async function submitTopup() {
 
     const paymentStillExists = App.state.payments.find(p => p.id === App.state.selectedPayment.id);
     if (!paymentStillExists) {
-        Utils.showToast('⚠️ Payment method no longer available', 'error');
+        Utils.showToast('Payment method no longer available', 'error');
         closePaymentDetails();
         return;
     }
