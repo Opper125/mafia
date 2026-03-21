@@ -33,7 +33,7 @@ const CONFIG = {
     // G2Bulk Reseller API Configuration - NEW
     G2BULK: {
         API_URL: 'https://api.g2bulk.com/api/v2',
-        API_KEY: '05042d1f5083632818639afd5e784fbf02658533250b60b6bebd09964afb4565',
+        API_KEY: '93ba1910b0ef6cfc8e7d20b91de4a5d078df8100902b869505008bbc57f952d8',
         ORDER_CHECK_INTERVAL: 30000,     // 30s - check processing orders
         QUEUE_RETRY_INTERVAL: 60000,     // 60s - retry queued orders  
         MAX_RETRY_ATTEMPTS: 50,          // Max retries for queued orders
