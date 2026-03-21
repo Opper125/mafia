@@ -2,9 +2,6 @@
 // ===== + AGGRESSIVE IMAGE CACHING SYSTEM =====
 // ===== + REALTIME SYNC SYSTEM (JSONBin.io Polling - No Firebase) =====
 // ===== + SERVER-SIDE BALANCE VALIDATION (JSONBin.io) =====
-// ===== + DYNAMIC INPUT FIELDS (Based on G2Bulk Requirements) =====
-// ===== + SERVICE-TO-CATEGORY MAPPING =====
-// ===== + MULTI-CHECKPOINT PURCHASE VALIDATION =====
 
 // ============================================================
 // ===== IMAGE CACHE SYSTEM — Instant Load & Offline Ready ====
@@ -654,17 +651,6 @@ const RealtimeSync = {
                     this._patchProductsGrid(freshProducts);
                 }
             }
-
-            // ✅ Keep G2Bulk availability synced (non-blocking, TTL cached)
-            if (freshProducts && freshProducts.some(p => p.serviceId)) {
-                G2BulkAvailability.refresh(false).then((changed) => {
-                    if (changed && App.state.currentPage === 'category' && App.state.currentCategory?.id === categoryId) {
-                        this._patchProductsGrid(App.state.products || []);
-                        App.updateBuyButton();
-                    }
-                }).catch(() => {});
-            }
-
         } catch (e) { /* silent */ }
         finally { this._isPolling.products = false; }
     },
@@ -1168,369 +1154,19 @@ const G2BulkAPI = {
 };
 window.G2BulkAPI = G2BulkAPI;
 
-
-// ===== G2Bulk Services Availability Cache (Auto Lock/Unlock UI) =====
-const G2BulkAvailability = {
-    TTL: 60000,
-    _lastFetch: 0,
-    _pending: null,
-    _map: new Map(),
-    _lastHash: '',
-
-    _safeArrayFromResponse(res) {
-        if (!res) return [];
-        if (Array.isArray(res)) return res;
-
-        // Try common response shapes (do not break if unknown)
-        if (Array.isArray(res.services)) return res.services;
-        if (Array.isArray(res.data)) return res.data;
-        if (Array.isArray(res.result)) return res.result;
-        return [];
-    },
-
-    _computeHash(services) {
-        try {
-            // Stable-ish: just ids + status if present
-            const parts = services.map(s => {
-                const id = String(s?.service ?? s?.id ?? '');
-                const st = s?.status !== undefined ? String(s.status) : '';
-                return `${id}:${st}`;
-            }).filter(Boolean).sort();
-            return parts.join('|');
-        } catch (e) {
-            return '';
-        }
-    },
-
-    _normalizeToMap(services) {
-        const map = new Map();
-        services.forEach(s => {
-            const id = String(s?.service ?? s?.id ?? '').trim();
-            if (!id) return;
-
-            // Active heuristic: if status exists and indicates disabled => not active
-            let active = true;
-            if (s?.status !== undefined && s?.status !== null) {
-                const st = String(s.status).toLowerCase();
-                if (st.includes('disable') || st.includes('inactive') || st.includes('off') || st === '0') active = false;
-            }
-            map.set(id, { raw: s, active });
-        });
-        return map;
-    },
-
-    async refresh(force = false) {
-        const now = Date.now();
-        if (!force && (now - this._lastFetch) < this.TTL && this._map.size > 0) return false;
-        if (this._pending) return false;
-
-        this._pending = (async () => {
-            try {
-                const res = await G2BulkAPI.getServices();
-                const services = this._safeArrayFromResponse(res);
-                const hash = this._computeHash(services);
-                const changed = hash && hash !== this._lastHash;
-
-                if (services && services.length > 0) {
-                    this._map = this._normalizeToMap(services);
-                    this._lastHash = hash;
-                    this._lastFetch = Date.now();
-                } else {
-                    // If response is empty/unknown, do not override existing map aggressively
-                    this._lastFetch = Date.now();
-                }
-
-                return changed;
-            } catch (e) {
-                // Availability check failure should not block UI
-                return false;
-            } finally {
-                this._pending = null;
-            }
-        })();
-
-        return await this._pending;
-    },
-
-    isServiceAvailable(serviceId) {
-        if (!serviceId) return true;
-
-        // If we haven't loaded services yet, don't lock UI blindly
-        if (!this._map || this._map.size === 0) return true;
-
-        const svc = this._map.get(String(serviceId));
-        if (!svc) return false;
-        return svc.active !== false;
-    }
-};
-window.G2BulkAvailability = G2BulkAvailability;
-
-
-// ===== DYNAMIC INPUT SYSTEM - Renders fields based on product requirements =====
-const DynamicInputSystem = {
-    buildDynamicInputs(product) {
-        if (!product || !product.requiredFields || product.requiredFields.length === 0) {
-            return '';
-        }
-
-        let html = '';
-        product.requiredFields.forEach((field, idx) => {
-            const fieldId = field.name || field.id || `field-${idx}`;
-            const isRequired = field.required !== false;
-            const helpText = field.help || field.description || '';
-            const fieldType = field.type || 'text';
-
-            switch (fieldType) {
-                case 'select':
-                    html += `
-                        <div class="input-group" data-field="${fieldId}">
-                            <label>${field.label || field.name}${isRequired ? ' <span class="required">*</span>' : ''}</label>
-                            <select id="input-${fieldId}" 
-                                    onchange="DynamicInputSystem.onFieldChange('${fieldId}', this.value)"
-                                    ${isRequired ? 'required' : ''}>
-                                <option value="">${field.placeholder || 'Select ' + (field.label || field.name)}</option>
-                                ${(field.options || []).map(opt => `<option value="${opt}">${opt}</option>`).join('')}
-                            </select>
-                            ${helpText ? `<small class="field-help">${helpText}</small>` : ''}
-                            <div class="field-error hidden" id="error-${fieldId}"></div>
-                        </div>
-                    `;
-                    break;
-                    
-                case 'email':
-                    html += `
-                        <div class="input-group" data-field="${fieldId}">
-                            <label>${field.label || field.name}${isRequired ? ' <span class="required">*</span>' : ''}</label>
-                            <input type="email" 
-                                   id="input-${fieldId}" 
-                                   placeholder="${field.placeholder || 'example@email.com'}"
-                                   oninput="DynamicInputSystem.onFieldChange('${fieldId}', this.value)"
-                                   ${isRequired ? 'required' : ''}>
-                            ${helpText ? `<small class="field-help">${helpText}</small>` : ''}
-                            <div class="field-error hidden" id="error-${fieldId}"></div>
-                        </div>
-                    `;
-                    break;
-                    
-                case 'tel':
-                case 'phone':
-                    html += `
-                        <div class="input-group" data-field="${fieldId}">
-                            <label>${field.label || field.name}${isRequired ? ' <span class="required">*</span>' : ''}</label>
-                            <input type="tel" 
-                                   id="input-${fieldId}" 
-                                   placeholder="${field.placeholder || '+1234567890'}"
-                                   oninput="DynamicInputSystem.onFieldChange('${fieldId}', this.value)"
-                                   ${isRequired ? 'required' : ''}>
-                            ${helpText ? `<small class="field-help">${helpText}</small>` : ''}
-                            <div class="field-error hidden" id="error-${fieldId}"></div>
-                        </div>
-                    `;
-                    break;
-
-                default:
-                    html += `
-                        <div class="input-group" data-field="${fieldId}">
-                            <label>${field.label || field.name}${isRequired ? ' <span class="required">*</span>' : ''}</label>
-                            <div class="input-with-checker">
-                                <input type="text" 
-                                       id="input-${fieldId}" 
-                                       placeholder="${field.placeholder || 'Enter ' + (field.label || field.name)}"
-                                       oninput="DynamicInputSystem.onFieldChange('${fieldId}', this.value)"
-                                       ${isRequired ? 'required' : ''}>
-                                ${field.hasValidator ? `
-                                    <button class="checker-btn" onclick="DynamicInputSystem.verifyField('${fieldId}')" title="Verify">
-                                        <i class="fas fa-search"></i>
-                                    </button>
-                                ` : ''}
-                            </div>
-                            ${helpText ? `<small class="field-help">${helpText}</small>` : ''}
-                            <div class="field-error hidden" id="error-${fieldId}"></div>
-                            <div class="field-verification hidden" id="verify-${fieldId}"></div>
-                        </div>
-                    `;
-            }
-        });
-
-        return html;
-    },
-
-    onFieldChange(fieldId, value) {
-        App.state.inputValues[fieldId] = value;
-        
-        const errorEl = document.getElementById(`error-${fieldId}`);
-        if (errorEl && value && value.trim()) {
-            errorEl.classList.add('hidden');
-            errorEl.innerHTML = '';
-        }
-
-        const field = this.getFieldConfig(fieldId);
-        if (field && field.hasValidator && value && value.trim()) {
-            GameIdChecker.autoCheck(fieldId, () => {
-                this.verifyField(fieldId);
-            }, 600);
-        }
-
-        App.updateBuyButton();
-    },
-
-    async verifyField(fieldId) {
-        const field = this.getFieldConfig(fieldId);
-        if (!field || !field.validator) return;
-
-        const value = document.getElementById(`input-${fieldId}`)?.value?.trim();
-        if (!value) {
-            this.showFieldError(fieldId, `Please enter ${field.label || field.name}`);
-            return;
-        }
-
-        const verifyEl = document.getElementById(`verify-${fieldId}`);
-        if (verifyEl) {
-            verifyEl.innerHTML = '<div class="field-verification-loading"><div class="spinner"></div><span>Verifying...</span></div>';
-            verifyEl.classList.remove('hidden');
-        }
-
-        try {
-            const allInputs = {};
-            Object.entries(App.state.inputValues).forEach(([k, v]) => {
-                allInputs[k] = v;
-            });
-
-            const result = await GameIdChecker.check(field.validator, value, allInputs);
-
-            if (result && result.valid) {
-                if (!App.state.checkerResults) App.state.checkerResults = {};
-                App.state.checkerResults[fieldId] = result;
-
-                let detailsHtml = '<div class="field-verification-success"><i class="fas fa-check-circle"></i> Verified';
-                if (result.nickname) detailsHtml += `<br><strong>${result.nickname}</strong>`;
-                if (result.playerName) detailsHtml += `<br><strong>${result.playerName}</strong>`;
-                if (result.country) detailsHtml += `<br>${CountryHelper.getDisplay(result.country)}`;
-                if (result.rank) detailsHtml += `<br>Rank: ${result.rank}`;
-                if (result.level) detailsHtml += `<br>Level: ${result.level}`;
-                detailsHtml += '</div>';
-
-                if (verifyEl) {
-                    verifyEl.innerHTML = detailsHtml;
-                    verifyEl.classList.remove('hidden');
-                }
-
-                this.clearFieldError(fieldId);
-                const inputEl = document.getElementById(`input-${fieldId}`);
-                if (inputEl) inputEl.classList.add('verified');
-
-                App.updateBuyButton();
-            } else {
-                const errorMsg = field.errorMessage || 'Account not found. Please check and try again.';
-                this.showFieldError(fieldId, errorMsg);
-
-                if (verifyEl) {
-                    verifyEl.innerHTML = `<div class="field-verification-failed"><i class="fas fa-times-circle"></i> ${errorMsg}</div>`;
-                    verifyEl.classList.remove('hidden');
-                }
-
-                if (App.state.checkerResults) {
-                    App.state.checkerResults[fieldId] = null;
-                }
-            }
-        } catch (error) {
-            console.error('Field verification error:', error);
-            this.showFieldError(fieldId, 'Verification failed. Please try again.');
-
-            if (verifyEl) {
-                verifyEl.innerHTML = '<div class="field-verification-failed"><i class="fas fa-exclamation-triangle"></i> Verification error</div>';
-                verifyEl.classList.remove('hidden');
-            }
-        }
-    },
-
-    showFieldError(fieldId, message) {
-        const errorEl = document.getElementById(`error-${fieldId}`);
-        if (errorEl) {
-            errorEl.textContent = message;
-            errorEl.classList.remove('hidden');
-        }
-
-        const inputEl = document.getElementById(`input-${fieldId}`);
-        if (inputEl) inputEl.classList.add('error');
-    },
-
-    clearFieldError(fieldId) {
-        const errorEl = document.getElementById(`error-${fieldId}`);
-        if (errorEl) {
-            errorEl.textContent = '';
-            errorEl.classList.add('hidden');
-        }
-
-        const inputEl = document.getElementById(`input-${fieldId}`);
-        if (inputEl) inputEl.classList.remove('error');
-    },
-
-    getFieldConfig(fieldId) {
-        if (!App.state.selectedProduct) return null;
-        const fields = App.state.selectedProduct.requiredFields || [];
-        return fields.find(f => (f.name || f.id) === fieldId);
-    },
-
-    validateAllFields() {
-        const fields = App.state.selectedProduct?.requiredFields || [];
-        let allValid = true;
-
-        fields.forEach(field => {
-            const fieldId = field.name || field.id;
-            const isRequired = field.required !== false;
-            const value = App.state.inputValues[fieldId];
-
-            if (isRequired && (!value || !value.trim())) {
-                this.showFieldError(fieldId, `${field.label || field.name} is required`);
-                allValid = false;
-            } else if (value && field.pattern) {
-                const regex = new RegExp(field.pattern);
-                if (!regex.test(value)) {
-                    this.showFieldError(fieldId, field.patternError || `Invalid ${field.label || field.name}`);
-                    allValid = false;
-                }
-            } else {
-                this.clearFieldError(fieldId);
-            }
-        });
-
-        return allValid;
-    }
-};
-window.DynamicInputSystem = DynamicInputSystem;
-
-
 // ===== Order Checker System (Auto Processing) =====
 const OrderChecker = {
     checkInterval: null,
     queueInterval: null,
     isChecking: false,
-    isRetryingQueue: false,
     
     start() {
         console.log('🔄 OrderChecker started');
-
         this.checkInterval = setInterval(() => this.checkProcessingOrders(), CONFIG.G2BULK.ORDER_CHECK_INTERVAL);
-
-        // ✅ IMPORTANT: Queue retry should be handled by ADMIN only (global worker)
-        try {
-            const isAdmin = (TelegramApp?.isAdmin && TelegramApp.isAdmin());
-            if (isAdmin) {
-                this.queueInterval = setInterval(() => this.retryQueuedOrders(), CONFIG.G2BULK.QUEUE_RETRY_INTERVAL);
-            } else {
-                this.queueInterval = null;
-            }
-        } catch (e) {
-            this.queueInterval = null;
-        }
-
+        this.queueInterval = setInterval(() => this.retryQueuedOrders(), CONFIG.G2BULK.QUEUE_RETRY_INTERVAL);
         setTimeout(() => {
             this.checkProcessingOrders();
-            try {
-                const isAdmin = (TelegramApp?.isAdmin && TelegramApp.isAdmin());
-                if (isAdmin) this.retryQueuedOrders();
-            } catch (e) {}
+            this.retryQueuedOrders();
         }, 5000);
     },
     
@@ -1614,25 +1250,15 @@ const OrderChecker = {
     },
     
     async retryQueuedOrders() {
-        // ✅ Admin only
-        try {
-            const isAdmin = (TelegramApp?.isAdmin && TelegramApp.isAdmin());
-            if (!isAdmin) return;
-        } catch (e) {
-            return;
-        }
-
-        if (this.isRetryingQueue) return;
-        this.isRetryingQueue = true;
-
+        if (!App.state.user) return;
+        
         try {
             const orders = await Database.getQueuedOrders();
-            if (!orders || orders.length === 0) return;
-
-            // Only orders that are still queued and not already having apiOrderId
-            const queuedOrders = orders.filter(o => o && o.status === 'queued' && !o.apiOrderId && o.serviceId);
-
-            if (queuedOrders.length === 0) return;
+            const userQueuedOrders = orders.filter(o => 
+                String(o.telegramId) === String(App.state.user.telegramId)
+            );
+            
+            if (userQueuedOrders.length === 0) return;
             
             const balanceResult = await G2BulkAPI.getBalance();
             if (!balanceResult || !balanceResult.balance || parseFloat(balanceResult.balance) <= 0) {
@@ -1641,9 +1267,8 @@ const OrderChecker = {
             }
             
             console.log(`💰 API Balance: ${balanceResult.balance} ${balanceResult.currency}`);
-            console.log(`📋 Retrying queued orders: ${queuedOrders.length} orders`);
             
-            for (const order of queuedOrders) {
+            for (const order of userQueuedOrders) {
                 if ((order.retriedCount || 0) >= CONFIG.G2BULK.MAX_RETRY_ATTEMPTS) {
                     await Database.updateOrderApiStatus(order.id, {
                         apiStatus: 'Failed',
@@ -1664,30 +1289,9 @@ const OrderChecker = {
                             status: 'processing',
                             apiError: null
                         });
-
-                        // ✅ Notify admin/bot for queued order that now started processing
-                        try {
-                            const u = await Database.getUserByTelegramId(order.telegramId);
-                            if (u) {
-                                await TelegramBot.notifyNewAutoOrder(order, u, apiResult.order);
-                            }
-                        } catch (e) { /* silent */ }
-
                     } else if (apiResult && apiResult.error) {
                         await Database.incrementOrderRetry(order.id);
-
-                        if (G2BulkAPI.isBalanceError(apiResult.error)) {
-                            // still queued
-                            await Database.updateOrderApiStatus(order.id, {
-                                apiStatus: 'Queued',
-                                status: 'queued',
-                                apiError: 'API balance insufficient - queued for retry'
-                            });
-                            try {
-                                const u = await Database.getUserByTelegramId(order.telegramId);
-                                if (u) await TelegramBot.notifyOrderQueued(order, u);
-                            } catch(e) {}
-                        } else {
+                        if (!G2BulkAPI.isBalanceError(apiResult.error)) {
                             await Database.updateOrderApiStatus(order.id, {
                                 apiStatus: 'Failed',
                                 status: 'failed',
@@ -1695,14 +1299,6 @@ const OrderChecker = {
                             });
                             try { await TelegramBot.notifyOrderFailed(order, apiResult.error); } catch(e) {}
                         }
-                    } else {
-                        // Unknown response -> treat as transient, keep queued & increment retry
-                        await Database.incrementOrderRetry(order.id);
-                        await Database.updateOrderApiStatus(order.id, {
-                            apiStatus: 'Queued',
-                            status: 'queued',
-                            apiError: 'Unknown API response - queued for retry'
-                        });
                     }
                 } catch (e) {
                     console.error(`Retry order ${order.orderId} error:`, e);
@@ -1713,8 +1309,6 @@ const OrderChecker = {
             }
         } catch (error) {
             console.error('Retry queued orders error:', error);
-        } finally {
-            this.isRetryingQueue = false;
         }
     }
 };
@@ -1864,7 +1458,7 @@ const CountryHelper = {
         'HN': '🇭🇳 Honduras', 'HK': '🇭🇰 Hong Kong', 'HU': '🇭🇺 Hungary',
         'IS': '🇮🇸 Iceland', 'IN': '🇮🇳 India', 'ID': '🇮🇩 Indonesia',
         'IR': '🇮🇷 Iran', 'IQ': '🇮🇶 Iraq', 'IE': '🇮🇪 Ireland',
-        'IL': '🇮🇱 Israel', 'IT': '🇮🇱 Italy', 'JM': '🇯🇲 Jamaica',
+        'IL': '🇮🇱 Israel', 'IT': '🇮🇹 Italy', 'JM': '🇯🇲 Jamaica',
         'JP': '🇯🇵 Japan', 'JO': '🇯🇴 Jordan', 'KZ': '🇰🇿 Kazakhstan',
         'KE': '🇰🇪 Kenya', 'KP': '🇰🇵 North Korea', 'KR': '🇰🇷 South Korea',
         'KW': '🇰🇼 Kuwait', 'KG': '🇰🇬 Kyrgyzstan', 'LA': '🇱🇦 Laos',
@@ -1891,7 +1485,7 @@ const CountryHelper = {
         'UG': '🇺🇬 Uganda', 'UA': '🇺🇦 Ukraine', 'AE': '🇦🇪 UAE',
         'GB': '🇬🇧 United Kingdom', 'US': '🇺🇸 United States', 'UY': '🇺🇾 Uruguay',
         'UZ': '🇺🇿 Uzbekistan', 'VE': '🇻🇪 Venezuela', 'VN': '🇻🇳 Vietnam',
-        'YE': '🇾🇪 Yemen', 'ZM': '🇿🇲 Zambia', 'ZW': '🇿🇲 Zimbabwe'
+        'YE': '🇾🇪 Yemen', 'ZM': '🇿🇲 Zambia', 'ZW': '🇿🇼 Zimbabwe'
     },
     
     getDisplay(code) {
@@ -1909,7 +1503,6 @@ const CountryHelper = {
     }
 };
 window.CountryHelper = CountryHelper;
-
 
 // ===== Main App =====
 const App = {
@@ -1981,9 +1574,6 @@ const App = {
             RealtimeSync.startOrdersListener();
             RealtimeSync.startTopupsListener();
             
-            // ✅ Warm up G2Bulk services availability (non-blocking)
-            try { G2BulkAvailability.refresh(false); } catch (e) {}
-
             OrderChecker.start();
             
             ImageCache.cleanup(30);
@@ -2211,17 +1801,6 @@ const App = {
             this.state.checkerResults = {};
             
             const hasG2BulkProducts = products && products.some(p => p.serviceId);
-
-            // ✅ Refresh availability (non-blocking). Once updated, re-patch grid to lock/unlock.
-            if (hasG2BulkProducts) {
-                G2BulkAvailability.refresh(false).then((changed) => {
-                    if (changed && App.state.currentPage === 'category' && App.state.currentCategory?.id === categoryId) {
-                        RealtimeSync._patchProductsGrid(App.state.products || []);
-                        App.updateBuyButton();
-                    }
-                }).catch(() => {});
-            }
-
             if (inputTables && inputTables.length > 0) {
                 this.state.inputTables = inputTables;
             } else if (hasG2BulkProducts) {
@@ -2260,12 +1839,9 @@ const App = {
 
     _buildProductCardHTML(product) {
         const price = product.discountedPrice || product.price;
-        const locked = (product.serviceId && G2BulkAvailability.isServiceAvailable(product.serviceId) === false);
-
         return `
-            <div class="product-card ${locked ? 'locked' : ''}" 
-                 ${locked ? '' : `onclick="App.selectProduct('${product.id}')"`} data-product-id="${product.id}">
-                ${locked ? `<span class="product-discount-badge" style="background:#ef4444;">Out of stock</span>` : ''}
+            <div class="product-card" 
+                 onclick="App.selectProduct('${product.id}')" data-product-id="${product.id}">
                 ${product.discount > 0 ? `<span class="product-discount-badge">-${product.discount}%</span>` : ''}
                 <img src="${ImageCache.get(product.icon)}" data-original-src="${product.icon}" alt="${product.name}" class="product-icon">
                 <div class="product-name">${renderCustomEmojis(product.name)}</div>
@@ -2275,7 +1851,7 @@ const App = {
                 </div>
                 <div class="product-delivery">
                     <i class="fas fa-bolt"></i>
-                    ${product.serviceId ? (locked ? 'Unavailable' : 'Auto Delivery') : (product.deliveryTime === 'instant' ? 'Instant' : product.deliveryTime)}
+                    ${product.serviceId ? 'Auto Delivery' : (product.deliveryTime === 'instant' ? 'Instant' : product.deliveryTime)}
                 </div>
             </div>
         `;
@@ -2290,20 +1866,24 @@ const App = {
         categoryTitle.textContent = this.state.currentCategory.name;
         
         if (this.state.inputTables?.length > 0) {
-            inputSection.innerHTML = this.state.inputTables.map(table => {
-                const html = DynamicInputSystem.buildDynamicInputs({
-                    requiredFields: [{
-                        name: table.name,
-                        label: table.name,
-                        placeholder: table.placeholder,
-                        type: table.fieldType || 'text',
-                        hasValidator: table.checkerEnabled,
-                        validator: table.checkerConfig
-                    }]
-                });
-                return html;
-            }).join('');
-            
+            inputSection.innerHTML = this.state.inputTables.map(table => `
+                <div class="input-group" data-table-id="${table.id}">
+                    <label>${table.name}</label>
+                    <div class="input-with-checker">
+                        <input type="text" 
+                               id="input-${table.id}" 
+                               placeholder="${table.placeholder}"
+                               oninput="App.onInputChange('${table.id}', '${table.name}', this.value)"
+                               autocomplete="off">
+                        ${table.checkerEnabled ? `
+                            <button class="checker-btn" onclick="App.checkGameId('${table.id}')" title="Verify ID">
+                                <i class="fas fa-search"></i>
+                            </button>
+                        ` : ''}
+                    </div>
+                    <div id="checker-result-${table.id}" class="checker-result hidden"></div>
+                </div>
+            `).join('');
             inputSection.classList.remove('hidden');
         } else {
             inputSection.innerHTML = '';
@@ -2332,19 +1912,173 @@ const App = {
         this.updateBuyButton();
     },
     
-    selectProduct(productId) {
-        TelegramApp.hapticFeedback('selection');
-        const product = this.state.products.find(p => p.id === productId);
-        if (!product) return;
-
-        // ✅ Prevent selecting unavailable G2Bulk service
-        if (product.serviceId && G2BulkAvailability.isServiceAvailable(product.serviceId) === false) {
-            Utils.showToast('This item is temporarily unavailable', 'warning');
-            TelegramApp.hapticFeedback('notification', 'warning');
+    onInputChange(tableId, tableName, value) {
+        this.state.inputValues[tableName] = value;
+        
+        const checkerTable = this.state.inputTables.find(t => t.checkerEnabled && t.checkerConfig);
+        if (!checkerTable) return;
+        
+        let config = checkerTable.checkerConfig;
+        if (typeof config === 'string') {
+            try { config = JSON.parse(config); } catch(e) { return; }
+        }
+        
+        const checkerInputEl = document.getElementById(`input-${checkerTable.id}`);
+        const checkerInputValue = checkerInputEl?.value?.trim();
+        if (!checkerInputValue) {
+            const resultDiv = document.getElementById(`checker-result-${checkerTable.id}`);
+            if (resultDiv) {
+                resultDiv.classList.add('hidden');
+                resultDiv.innerHTML = '';
+            }
             return;
         }
-
-        this.state.selectedProduct = product;
+        
+        const requiredInputs = GameIdChecker.getRequiredInputs(config);
+        for (const reqInput of requiredInputs) {
+            if (!this.state.inputValues[reqInput]?.trim()) return;
+        }
+        
+        GameIdChecker.autoCheck(checkerTable.id, () => {
+            this.checkGameId(checkerTable.id);
+        }, 800);
+    },
+    
+    async checkGameId(tableId) {
+        const table = this.state.inputTables.find(t => t.id === tableId);
+        if (!table || !table.checkerEnabled || !table.checkerConfig) return;
+        
+        const input = document.getElementById(`input-${tableId}`);
+        const resultDiv = document.getElementById(`checker-result-${tableId}`);
+        const value = input?.value?.trim();
+        
+        if (!value) {
+            Utils.showToast(`Please enter ${table.name}`, 'warning');
+            return;
+        }
+        
+        resultDiv.innerHTML = `
+            <div class="checker-card loading">
+                <div class="checker-loading-content">
+                    <div class="checker-spinner"></div>
+                    <span>Verifying Game ID...</span>
+                </div>
+            </div>
+        `;
+        resultDiv.classList.remove('hidden');
+        resultDiv.className = 'checker-result show';
+        
+        try {
+            const result = await GameIdChecker.check(
+                table.checkerConfig, 
+                value, 
+                this.state.inputValues
+            );
+            
+            if (result && result.valid) {
+                this.state.checkerResults[tableId] = result;
+                
+                let infoRows = '';
+                
+                if (result.nickname) {
+                    infoRows += `
+                        <div class="checker-info-row">
+                            <div class="checker-info-icon"><i class="fas fa-gamepad"></i></div>
+                            <div class="checker-info-data">
+                                <span class="checker-info-label">Nickname</span>
+                                <strong class="checker-info-value nickname">${result.nickname}</strong>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                if (result.country) {
+                    infoRows += `
+                        <div class="checker-info-row">
+                            <div class="checker-info-icon"><i class="fas fa-globe-asia"></i></div>
+                            <div class="checker-info-data">
+                                <span class="checker-info-label">Country</span>
+                                <strong class="checker-info-value">${CountryHelper.getDisplay(result.country)}</strong>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                if (!result.nickname && !result.country) {
+                    infoRows = `
+                        <div class="checker-info-row">
+                            <div class="checker-info-icon"><i class="fas fa-check"></i></div>
+                            <div class="checker-info-data">
+                                <strong class="checker-info-value">Valid Game ID</strong>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                resultDiv.innerHTML = `
+                    <div class="checker-card valid">
+                        <div class="checker-status-bar valid">
+                            <i class="fas fa-check-circle"></i>
+                            <span>Account Verified</span>
+                        </div>
+                        <div class="checker-info-body">
+                            ${infoRows}
+                        </div>
+                    </div>
+                `;
+                resultDiv.className = 'checker-result show valid';
+                TelegramApp.hapticFeedback('notification', 'success');
+                
+            } else {
+                this.state.checkerResults[tableId] = null;
+                
+                let errorMsg = 'Invalid Game ID. Please check and try again.';
+                let config = table.checkerConfig;
+                if (typeof config === 'string') {
+                    try { config = JSON.parse(config); } catch(e) {}
+                }
+                if (config && config.errorMessage) {
+                    errorMsg = config.errorMessage;
+                }
+                
+                resultDiv.innerHTML = `
+                    <div class="checker-card invalid">
+                        <div class="checker-status-bar invalid">
+                            <i class="fas fa-times-circle"></i>
+                            <span>Account Not Found</span>
+                        </div>
+                        <div class="checker-error-body">
+                            <p>${errorMsg}</p>
+                        </div>
+                    </div>
+                `;
+                resultDiv.className = 'checker-result show invalid';
+                TelegramApp.hapticFeedback('notification', 'error');
+            }
+        } catch (error) {
+            this.state.checkerResults[tableId] = null;
+            resultDiv.innerHTML = `
+                <div class="checker-card error">
+                    <div class="checker-status-bar error">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <span>Verification Failed</span>
+                    </div>
+                    <div class="checker-error-body">
+                        <p>Unable to verify at this time. Please try again later.</p>
+                    </div>
+                </div>
+            `;
+            resultDiv.className = 'checker-result show error';
+        }
+    },
+    
+    updateInputValue(tableId, tableName, value) {
+        this.state.inputValues[tableName] = value;
+    },
+    
+    selectProduct(productId) {
+        TelegramApp.hapticFeedback('selection');
+        this.state.selectedProduct = this.state.products.find(p => p.id === productId);
         
         document.querySelectorAll('.product-card').forEach(card => {
             card.classList.toggle('selected', card.dataset.productId === productId);
@@ -2367,31 +2101,16 @@ const App = {
             const balance = this.state.user?.balance || 0;
             const canAfford = balance >= price;
 
-            const locked = (this.state.selectedProduct.serviceId && G2BulkAvailability.isServiceAvailable(this.state.selectedProduct.serviceId) === false);
-            const disabled = locked || !canAfford;
-
             container.innerHTML = `
-                <button class="buy-now-btn ${disabled ? 'insufficient' : ''}" 
+                <button class="buy-now-btn ${!canAfford ? 'insufficient' : ''}" 
                         onclick="App.openBuyModal()"
-                        ${disabled ? `title="${locked ? 'Unavailable' : 'Insufficient balance'}"` : ''}>
+                        ${!canAfford ? 'title="Insufficient balance"' : ''}>
                     <i class="fas fa-shopping-cart"></i>
                     Buy Now - ${Utils.formatCurrency(price, this.state.selectedProduct.currency)}
-                    ${locked ? ' <small style="opacity:0.8;">(Unavailable)</small>' : (!canAfford ? ' <small style="opacity:0.8;">(Insufficient balance)</small>' : '')}
+                    ${!canAfford ? ' <small style="opacity:0.8;">(Insufficient balance)</small>' : ''}
                 </button>
             `;
             container.classList.remove('hidden');
-
-            // Hard disable click if locked
-            const btn = container.querySelector('button');
-            if (btn) {
-                if (locked) {
-                    btn.disabled = true;
-                    btn.style.opacity = '0.6';
-                    btn.style.cursor = 'not-allowed';
-                } else {
-                    btn.disabled = false;
-                }
-            }
         } else {
             container.classList.add('hidden');
         }
@@ -2413,19 +2132,10 @@ const App = {
             return;
         }
 
-        // ✅ Block if G2Bulk service missing/unavailable
-        if (this.state.selectedProduct.serviceId && G2BulkAvailability.isServiceAvailable(this.state.selectedProduct.serviceId) === false) {
-            Utils.showToast('This item is temporarily unavailable', 'error');
-            TelegramApp.hapticFeedback('notification', 'error');
-            this.state.selectedProduct = null;
-            this.updateBuyButton();
-            return;
-        }
-
         // Re-verify product still exists
         const currentProduct = this.state.products.find(p => p.id === this.state.selectedProduct.id);
         if (!currentProduct) {
-            Utils.showToast('This product is no longer available', 'error');
+            Utils.showToast('⚠️ This product is no longer available', 'error');
             this.state.selectedProduct = null;
             this.updateBuyButton();
             return;
@@ -2495,21 +2205,6 @@ const App = {
         const warningEl = document.getElementById('rt-balance-warning');
         if (warningEl) warningEl.remove();
     },
-
-    _isTransientApiError(err) {
-        const msg = String(err?.message || err || '').toLowerCase();
-        return (
-            msg.includes('aborted') ||
-            msg.includes('timeout') ||
-            msg.includes('network') ||
-            msg.includes('failed to fetch') ||
-            msg.includes('429') ||
-            msg.includes('500') ||
-            msg.includes('502') ||
-            msg.includes('503') ||
-            msg.includes('504')
-        );
-    },
     
     // ★★★ CRITICAL: Fresh balance check from JSONBin.io before purchase ★★★
     async confirmPurchase() {
@@ -2520,47 +2215,25 @@ const App = {
         
         const product = this.state.selectedProduct;
 
-        // ── Step 1: Validate all dynamic input fields ──────────────
-        if (!DynamicInputSystem.validateAllFields()) {
-            Utils.showToast('Please fill all required fields correctly', 'warning');
-            TelegramApp.hapticFeedback('notification', 'warning');
-            return;
-        }
-
-        // ── Step 2: Re-check product still exists ────────────────
+        // ── Step 1: Re-check product still exists ────────────────
         const currentProduct = this.state.products.find(p => p.id === product.id);
         if (!currentProduct) {
-            Utils.showToast('This product is no longer available', 'error');
+            Utils.showToast('⚠️ This product is no longer available', 'error');
             this.closeBuyModal();
             this.state.selectedProduct = null;
             this.updateBuyButton();
             return;
         }
 
-        // ✅ Block if G2Bulk service currently unavailable (if map is loaded)
-        if (currentProduct.serviceId) {
-            try {
-                await G2BulkAvailability.refresh(false);
-            } catch (e) {}
-            if (G2BulkAvailability.isServiceAvailable(currentProduct.serviceId) === false) {
-                Utils.showToast('This item is temporarily unavailable', 'error');
-                TelegramApp.hapticFeedback('notification', 'error');
-                this.closeBuyModal();
-                this.state.selectedProduct = null;
-                this.updateBuyButton();
-                return;
-            }
-        }
-
         const price = currentProduct.discountedPrice || currentProduct.price;
         
-        // ── Step 3: ★★★ Read FRESH balance from JSONBin.io ★★★ ──
+        // ── Step 2: ★★★ Read FRESH balance from JSONBin.io ★★★ ──
         let freshBalance;
         try {
             const freshUser = await Database.getUserByTelegramId(this.state.user.telegramId);
             
             if (!freshUser) {
-                Utils.showToast('User account not found', 'error');
+                Utils.showToast('❌ User account not found', 'error');
                 return;
             }
             
@@ -2570,15 +2243,15 @@ const App = {
             this.state.user = { ...this.state.user, ...freshUser };
             this.updateHeader();
             
-            console.log(`Balance verification: ${freshBalance} (need: ${price})`);
+            console.log(`🔒 Server balance check: ${freshBalance} (need: ${price})`);
             
         } catch (fetchError) {
-            console.error('Failed to verify balance:', fetchError);
-            Utils.showToast('Unable to verify balance. Please try again.', 'error');
+            console.error('❌ Failed to verify balance:', fetchError);
+            Utils.showToast('❌ Unable to verify balance. Please try again.', 'error');
             return;
         }
 
-        // ── Step 4: Check balance using SERVER value ────────────
+        // ── Step 3: Check balance using SERVER value ────────────
         if (freshBalance < price) {
             TelegramApp.hapticFeedback('notification', 'error');
             
@@ -2596,11 +2269,11 @@ const App = {
                 return;
             }
             
-            Utils.showToast(`Insufficient balance! Need: ${Utils.formatCurrency(price, 'MMK')} (${CONFIG.MAX_FAILED_PURCHASE_ATTEMPTS - attempts} attempts left)`, 'error');
+            Utils.showToast(`Insufficient balance! Actual: ${Utils.formatCurrency(freshBalance, 'MMK')} (${CONFIG.MAX_FAILED_PURCHASE_ATTEMPTS - attempts} attempts left)`, 'error');
             return;
         }
         
-        // ── Step 5: Proceed with purchase ────────────────────────
+        // ── Step 4: Proceed with purchase ────────────────────────
         this.state.isProcessingPurchase = true;
         Utils.showLoading('Processing order...');
         TelegramApp.hapticFeedback('impact', 'heavy');
@@ -2640,7 +2313,7 @@ const App = {
                         });
                         
                         this.closeBuyModal();
-                        Utils.showToast('Order placed! Auto-processing...', 'success');
+                        Utils.showToast('✅ Order placed! Auto-processing...', 'success');
                         try { await TelegramBot.notifyNewAutoOrder(order, this.state.user, apiResult.order); } catch(e) { console.warn('Notify error:', e); }
                         
                     } else if (apiResult && apiResult.error) {
@@ -2652,11 +2325,10 @@ const App = {
                             });
                             
                             this.closeBuyModal();
-                            Utils.showToast('Order queued. Will process when API balance available.', 'info');
+                            Utils.showToast('⏳ Order queued. Will process when API balance available.', 'info');
                             try { await TelegramBot.notifyOrderQueued(order, this.state.user); } catch(e) { console.warn('Notify error:', e); }
                             
                         } else {
-                            // Non-balance errors fail immediately and refund
                             if (balanceDeducted && !balanceRefunded) {
                                 await Database.updateUserBalance(this.state.user.telegramId, price, 'add');
                                 balanceRefunded = true;
@@ -2669,56 +2341,30 @@ const App = {
                             });
                             
                             this.closeBuyModal();
-                            Utils.showToast('Order failed: ' + apiResult.error + '. Balance refunded.', 'error');
+                            Utils.showToast('❌ Order failed: ' + apiResult.error + '. Balance refunded.', 'error');
                             try { await TelegramBot.notifyOrderFailed(order, apiResult.error); } catch(e) { console.warn('Notify error:', e); }
                         }
-                    } else {
-                        // Unknown response -> queue for retry (do not refund)
-                        await Database.updateOrderApiStatus(order.id, {
-                            apiStatus: 'Queued',
-                            status: 'queued',
-                            apiError: 'Unknown API response - queued for retry'
-                        });
-
-                        this.closeBuyModal();
-                        Utils.showToast('Order queued. Will auto retry.', 'info');
-                        try { await TelegramBot.notifyOrderQueued(order, this.state.user); } catch(e) { console.warn('Notify error:', e); }
                     }
                 } catch (apiError) {
                     console.error('G2Bulk API call failed:', apiError);
-
-                    // ✅ Transient connection errors -> queue (do not refund)
-                    if (this._isTransientApiError(apiError)) {
-                        await Database.updateOrderApiStatus(order.id, {
-                            apiStatus: 'Queued',
-                            status: 'queued',
-                            apiError: 'Transient API error - queued for retry: ' + apiError.message
-                        });
-
-                        this.closeBuyModal();
-                        Utils.showToast('Temporary API issue. Order queued & will auto retry.', 'info');
-                        try { await TelegramBot.notifyOrderQueued(order, this.state.user); } catch(e) { console.warn('Notify error:', e); }
-                    } else {
-                        // Non-transient -> refund + fail
-                        if (balanceDeducted && !balanceRefunded) {
-                            await Database.updateUserBalance(this.state.user.telegramId, price, 'add');
-                            balanceRefunded = true;
-                        }
-                        
-                        await Database.updateOrderApiStatus(order.id, {
-                            apiStatus: 'Failed',
-                            status: 'failed',
-                            apiError: 'API connection error: ' + apiError.message
-                        });
-                        
-                        this.closeBuyModal();
-                        Utils.showToast('Connection error. Balance refunded.', 'error');
-                        try { await TelegramBot.notifyOrderFailed(order, apiError.message); } catch(e) { console.warn('Notify error:', e); }
+                    
+                    if (balanceDeducted && !balanceRefunded) {
+                        await Database.updateUserBalance(this.state.user.telegramId, price, 'add');
+                        balanceRefunded = true;
                     }
+                    
+                    await Database.updateOrderApiStatus(order.id, {
+                        apiStatus: 'Failed',
+                        status: 'failed',
+                        apiError: 'API connection error: ' + apiError.message
+                    });
+                    
+                    this.closeBuyModal();
+                    Utils.showToast('❌ Connection error. Balance refunded.', 'error');
                 }
             } else {
                 this.closeBuyModal();
-                Utils.showToast('Order placed! Awaiting processing.', 'success');
+                Utils.showToast('📦 Order placed! Awaiting processing.', 'success');
                 try { await TelegramBot.notifyNewOrder(order, this.state.user); } catch(e) { console.warn('Notify error:', e); }
             }
             
@@ -2737,9 +2383,9 @@ const App = {
                 try {
                     await Database.updateUserBalance(this.state.user.telegramId, price, 'add');
                     balanceRefunded = true;
-                    console.log('Emergency refund completed');
+                    console.log('🔄 Emergency refund completed');
                 } catch(refundError) {
-                    console.error('Emergency refund failed:', refundError);
+                    console.error('❌ Emergency refund failed:', refundError);
                 }
             }
             
@@ -2864,15 +2510,15 @@ const App = {
     
     getStatusText(status) {
         const map = {
-            'pending':    'Pending',
-            'processing': 'Processing',
-            'completed':  'Completed',
-            'failed':     'Failed',
-            'queued':     'Queued',
-            'partial':    'Partial',
-            'canceled':   'Canceled',
-            'approved':   'Completed',
-            'rejected':   'Rejected'
+            'pending':    '⏳ Pending',
+            'processing': '🔄 Processing',
+            'completed':  '✅ Completed',
+            'failed':     '❌ Failed',
+            'queued':     '📋 Queued',
+            'partial':    '⚠️ Partial',
+            'canceled':   '🚫 Canceled',
+            'approved':   '✅ Completed',
+            'rejected':   '❌ Rejected'
         };
         return map[status] || status;
     },
@@ -3052,7 +2698,7 @@ async function openTopupModalHandler() {
 function selectPayment(paymentId) {
     const payment = App.state.payments.find(p => p.id === paymentId);
     if (!payment) {
-        Utils.showToast('Payment method not available', 'warning');
+        Utils.showToast('⚠️ Payment method not available', 'warning');
         return;
     }
     App.state.selectedPayment = payment;
@@ -3141,7 +2787,7 @@ async function submitTopup() {
 
     const paymentStillExists = App.state.payments.find(p => p.id === App.state.selectedPayment.id);
     if (!paymentStillExists) {
-        Utils.showToast('Payment method no longer available', 'error');
+        Utils.showToast('⚠️ Payment method no longer available', 'error');
         closePaymentDetails();
         return;
     }
